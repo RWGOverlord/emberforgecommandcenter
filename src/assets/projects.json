@@ -1,0 +1,24 @@
+[
+  {
+    "id": "doulaflow",
+    "label": "DoulaFlow",
+    "repoPath": "/Users/risingwarriorgames/Documents/07_TechProjects/DoulaFlow/doulaflow",
+    "claudeMd": "CLAUDE.md",
+    "tasksFile": "TASKS.md",
+    "bugsFile": "BUGS.md",
+    "vercelProject": "doulaflow-m42z",
+    "status": "LIVE",
+    "statusColor": "#00ffcc"
+  },
+  {
+    "id": "emberforgeos",
+    "label": "Emberforge.OS",
+    "repoPath": "/Users/risingwarriorgames/Documents/07_TechProjects/EmberforgeOS",
+    "claudeMd": "EMBERFORGE.md",
+    "tasksFile": "TASKS.md",
+    "bugsFile": "BUGS.md",
+    "vercelProject": null,
+    "status": "REPO",
+    "statusColor": "#00d4ff"
+  }
+]

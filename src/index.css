@@ -1,0 +1,70 @@
+@import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@300;400;500;600;700&display=swap');
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  /* ICY BLUE default */
+  --bg:        #020810;
+  --bg-panel:  #020d1a;
+  --bg-hover:  #00d4ff0f;
+  --accent:    #00d4ff;
+  --accent2:   #00ffcc;
+  --text-alpha: 1;
+  --text:      rgba(200, 232, 255, var(--text-alpha));
+  --border:    #00d4ff18;
+  --border-md: #00d4ff33;
+  --border-hi: #00d4ff66;
+  --dim:       #00d4ff44;
+  --dimmer:    #00d4ff22;
+  --font-mono: 'Share Tech Mono', monospace;
+  --font-head: 'Rajdhani', sans-serif;
+}
+
+html, body, #root {
+  width: 100%; height: 100%; overflow: hidden;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+}
+
+/* Scrollbars */
+::-webkit-scrollbar { width: 3px; height: 3px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border-md); border-radius: 2px; }
+
+/* Animations */
+@keyframes scanline {
+  0%   { transform: translateY(-100%); }
+  100% { transform: translateY(100vh); }
+}
+@keyframes flicker {
+  0%,100% { opacity: 1; }
+  92%  { opacity: 1; }
+  93%  { opacity: 0.4; }
+  94%  { opacity: 1; }
+  96%  { opacity: 0.7; }
+  97%  { opacity: 1; }
+}
+@keyframes blink {
+  0%,100% { opacity: 1; }
+  50%  { opacity: 0; }
+}
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes slide-in {
+  from { opacity: 0; transform: translateX(12px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+@keyframes grid-scroll {
+  from { background-position: 0 0; }
+  to   { background-position: 0 60px; }
+}
+@keyframes pulse-glow {
+  0%,100% { box-shadow: 0 0 8px #00d4ff44; }
+  50%      { box-shadow: 0 0 18px #00d4ff88; }
+}

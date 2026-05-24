@@ -1,0 +1,7 @@
+node_modules/
+dist/
+dist-electron/
+.DS_Store
+.env
+electron/gmail-credentials.json
+electron/gmail-token.json
