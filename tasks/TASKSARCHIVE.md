@@ -1013,3 +1013,496 @@
       - No edit functionality yet — just display
 
 - [x] // SYSTEM — ABOUT stub
+
+- [x] // COMMS SMS — inline image rendering (MMS)
+      - Currently MMS images may not be rendering
+        depending on how Pushbullet/bridge returns them
+      - When message has an image attachment:
+          Render inline below message text bubble
+          Same container width as bubble (max 65%)
+          img style:
+            width: 100%
+            height: auto
+            border: 1px solid var(--border-md)
+            border-radius: 0 4px 4px 4px (inbound)
+            border-radius: 4px 0 4px 4px (outbound)
+            margin-top: 4px if body text also present
+          Tap/click to expand:
+            Opens image full size in a modal overlay:
+              background: rgba(2, 8, 16, 0.95)
+              image centered, max 90vw / 90vh
+              click anywhere outside to dismiss
+              border: 1px solid var(--border-md)
+
+- [x] // SYSTEM → DISPLAY — font size preset toggle
+      - Add below the text contrast toggle
+      - Label: "// FONT SIZE"
+        font-size 8px, color var(--dim), letter-spacing 3px
+      - Three buttons: [ S ]  [ M ]  [ L ]
+        Same mode button style as text contrast toggle
+        Default: S (current size)
+
+      - Each mode sets a --font-scale CSS variable
+        on :root and scales all font-size values
+        by overriding the base font size on root:
+
+          S (current):
+            document.documentElement.style
+              .setProperty('--font-scale', '1')
+            font-size on html element: 13px (unchanged)
+
+          M:
+            --font-scale: 1.15
+            html font-size: 15px
+
+          L:
+            --font-scale: 1.3
+            html font-size: 17px
+
+      - Implementation:
+          Set font-size on the html element directly:
+            document.documentElement.style.fontSize =
+              size === 'S' ? '13px' :
+              size === 'M' ? '15px' : '17px'
+          All rem/em units scale automatically
+          For px-based font sizes in the app:
+            Update these CSS variables on :root:
+              --fs-xs:   size S: 8px  | M: 9px  | L: 10px
+              --fs-sm:   size S: 9px  | M: 10px | L: 12px
+              --fs-base: size S: 10px | M: 12px | L: 14px
+              --fs-md:   size S: 11px | M: 13px | L: 15px
+              --fs-lg:   size S: 12px | M: 14px | L: 16px
+              --fs-xl:   size S: 13px | M: 15px | L: 17px
+              --fs-head: size S: 14px | M: 16px | L: 18px
+            CC should audit all hardcoded font-size values
+            in the app and replace with these variables
+            where appropriate
+          Status bar, nav labels, panel headers,
+          thread lists, email body, vault content,
+          market prices, weather — all should scale
+
+      - Persist to electron-store key: 'fontSize'
+        values: 'S' | 'M' | 'L'
+        using existing settingsAPI.set IPC
+      - On app load: read 'fontSize' from store
+        apply immediately before boot animation
+        default to 'S' if not set
+- [x] // PROJECTS — edit project settings
+      - Add [ SETTINGS ] button to the project
+        detail panel header row, next to [ OPEN IN VSCODE ]
+        Style:
+          font-size 8px, letter-spacing 2px
+          border: 1px solid var(--border-md)
+          color: var(--dimmer), padding: 4px 10px
+          hover: border var(--accent), color var(--accent)
+
+      - Clicking [ SETTINGS ] replaces the right panel
+        content with the project settings form
+        Same form as [ + NEW PROJECT ] but pre-populated
+        with current project values
+
+      - Form fields (all pre-filled):
+          // LABEL
+          // REPO PATH
+          // CONTEXT FILE
+          // TASKS FILE
+          // BUGS FILE
+          // VERCEL ID
+          // STATUS toggle
+
+      - Header changes to:
+          "// EDIT — [PROJECT NAME]"
+          Rajdhani 700, accent color
+
+      - Buttons row right-aligned:
+          [ SAVE CHANGES ]  [ CANCEL ]
+          [ SAVE CHANGES ]: border/color var(--accent)
+          [ CANCEL ]: border/color var(--dimmer)
+
+      - SAVE CHANGES behavior:
+          Update project in electron-store 'projects' array
+          Match by project id
+          On save: return to normal project detail view
+            with updated values reflected immediately
+          Refresh stat cards if Vercel ID changed
+
+      - CANCEL: return to normal project detail view
+        no changes saved
+- [x] Bug — GitHub stat card returning same repo
+      for all projects regardless of repoPath
+      - Root cause: git remote get-url origin command
+        result may be cached or not scoped correctly
+        to each project's repoPath
+      - Fix in github:getStatus and github:getCommits
+        IPC handlers:
+          Ensure execSync uses the correct working dir:
+            execSync('git remote get-url origin', {
+              cwd: repoPath    ← this is the critical part
+            })
+          Without cwd, git falls back to the Command
+          Center's own directory and always returns
+          the same remote
+      - After fix, verify both projects return their
+        correct GitHub repo URLs:
+          DoulaFlow:
+            /Users/risingwarriorgames/Documents/
+            07_TechProjects/DoulaFlow/doulaflow
+            → should resolve to RWGOverlord/doulaflow
+          EmberforgeCommandCenter:
+            /Users/risingwarriorgames/Documents/
+            07_TechProjects/EmberforgeCommandCenter
+            → should resolve to correct ECC repo
+- [x] // PROJECTS — dynamic logs panel
+      - Replace static "// NO LOGS YET" empty state
+        with a dynamic log viewer
+      - Add [ LOGS ] button to both VERCEL and GITHUB
+        stat cards, bottom-left of each card:
+          font-size 8px, letter-spacing 2px
+          border: 1px solid var(--border-md)
+          color: var(--dimmer), padding: 3px 8px
+          hover: border var(--accent), color var(--accent)
+          Active (logs panel showing this source):
+            border var(--accent2), color var(--accent2)
+
+      LOGS PANEL HEADER:
+      - Shows which source is active:
+          "// VERCEL LOGS" or "// GITHUB COMMITS"
+          accent color, Rajdhani 700, letter-spacing 1px
+      - [ REFRESH ] button right-aligned:
+          same small button style as [ LOGS ]
+      - border-bottom: 1px solid var(--border)
+        padding: 8px 12px
+
+      VERCEL LOGS:
+      - New IPC handler: vercel:getLogs
+          Args: { projectId, deploymentId, token }
+          Step 1: get latest deployment ID if not cached
+            GET https://api.vercel.com/v9/projects/
+              {projectId}/deployments?limit=1
+            Headers: { Authorization: `Bearer ${token}` }
+            Extract deployments[0].uid as deploymentId
+          Step 2: fetch runtime logs
+            GET https://api.vercel.com/v1/projects/
+              {projectId}/deployments/{deploymentId}/
+              runtime-logs
+            Headers: { Authorization: `Bearer ${token}` }
+          Returns array of log entries:
+            {
+              timestamp: number,
+              level: 'info'|'error'|'warning',
+              message: string,
+              source: string,
+              requestPath?: string,
+              responseStatusCode?: number,
+            }
+          Limit to last 50 entries
+          Sort: newest first
+
+      - Log entry rendering:
+          Timestamp: HH:MM:SS, font-size 8px,
+            color var(--dimmer), width 52px, flex-shrink 0
+          Level badge:
+            error:   "ERR" color #ff4444
+            warning: "WRN" color #ffc200
+            info:    "INF" color var(--dim)
+            font-size 7px, width 24px, flex-shrink 0
+          Message: font-size 9px, color var(--dim)
+            error messages: color #ff4444
+            word-break: break-all
+          Request path if present:
+            font-size 8px, color var(--dimmer)
+            below message, left-padded 76px
+          Status code if present:
+            inline after path,
+            2xx: color var(--accent2)
+            4xx/5xx: color #ff4444
+
+      GITHUB COMMITS:
+      - New IPC handler: github:getCommits
+          Args: { repoPath, token, limit? }
+          GET https://api.github.com/repos/
+            {owner}/{repo}/commits?per_page=20
+          Headers: {
+            Authorization: `Bearer ${token}`,
+            Accept: 'application/vnd.github.v3+json'
+          }
+          Returns array:
+            {
+              sha: string,        ← first 7 chars only
+              message: string,    ← first line only
+              author: string,
+              timestamp: number,
+              url: string,
+            }
+
+      - Commit entry rendering:
+          Timestamp: relative time, font-size 8px,
+            color var(--dimmer), width 64px, flex-shrink 0
+          SHA: first 7 chars, font-size 8px,
+            color var(--accent), width 52px,
+            font-family Share Tech Mono
+          Message: font-size 9px, color var(--dim)
+            truncate at 1 line with ellipsis
+          Author: font-size 8px, color var(--dimmer)
+            below message, left-padded 116px
+
+      EMPTY / LOADING / ERROR STATES:
+      - Default (no [ LOGS ] clicked):
+          "// SELECT VERCEL OR GITHUB LOGS"
+          centered, color var(--dimmer), font-size 9px
+          letter-spacing 2px
+      - Loading: "// FETCHING LOGS..."
+          with blink cursor
+      - Error: "// FAILED TO LOAD LOGS"
+          color #ff4444, [ RETRY ] button below
+      - Note: Vercel runtime logs only retained
+          3 days — show notice at top of log list:
+          "// LOGS AVAILABLE FOR LAST 3 DAYS ONLY"
+          font-size 8px, color var(--dimmer)
+          border-bottom: 1px solid var(--border)
+          padding: 6px 12px
+- [x] Fix Supabase health check returning false DEGRADED
+      - Current check hits: {projectUrl}/rest/v1/
+        This returns non-200 on many projects even
+        when healthy — unreliable health signal
+      - Replace with:
+          GET {projectUrl}/rest/v1/?apikey={anonKey}
+          or better:
+          GET {projectUrl}/rest/v1/
+          Headers: {
+            apikey: anonKey,
+            Authorization: `Bearer ${anonKey}`
+          }
+          Consider healthy if response status is
+          200 OR 400 OR 404 — any response means
+          the server is reachable and responding
+          Only show OFFLINE if fetch throws entirely
+          (network error, DNS failure, timeout)
+      - DEGRADED state can be removed entirely
+        for now — just CONNECTED ✓ or OFFLINE ✗
+- [x] VERCEL stat card — live data
+      - On project select: fetch Vercel data if
+        API token + project ID are configured
+      - Fetch via main process IPC new handler:
+          ipcMain.handle('vercel:getStatus', async (_, { projectId, token }) => {
+            GET https://api.vercel.com/v9/projects/{projectId}/deployments
+              ?limit=1
+            Headers: { Authorization: `Bearer ${token}` }
+            Returns latest deployment:
+              {
+                state: string,     ← READY/BUILDING/ERROR
+                createdAt: number, ← epoch ms
+                meta: {
+                  githubCommitMessage: string,
+                  githubCommitRef: string,   ← branch
+                }
+              }
+          })
+      - Add to preload bridge:
+          vercelAPI: {
+            getStatus: (projectId, token) =>
+              ipcRenderer.invoke('vercel:getStatus', { projectId, token })
+          }
+      - Stat card display (replaces — / not connected):
+          Top: state badge
+            READY:    "READY ✓"   color var(--accent2)
+            BUILDING: "BUILDING"  color #ffc200
+            ERROR:    "FAILED ✗"  color #ff4444
+          Middle: relative deploy time
+            "deployed 2hrs ago"
+            font-size 9px, color var(--dim)
+          Bottom: branch + commit message truncated
+            "main — fix intake form token"
+            font-size 8px, color var(--dimmer)
+      - Loading state: "// FETCHING..." in var(--dimmer)
+      - Error state: "// API ERROR" in #ff4444
+      - Refresh every 60 seconds
+
+- [x] GITHUB stat card — live data
+      - New IPC handler:
+          ipcMain.handle('github:getStatus', async (_, { repoPath, token }) => {
+            Extract owner/repo from repoPath:
+              run: git -C repoPath remote get-url origin
+              parse github.com/{owner}/{repo} from output
+            Fetch via GitHub API:
+              GET https://api.github.com/repos/{owner}/{repo}/commits?per_page=1
+              GET https://api.github.com/repos/{owner}/{repo}/issues?state=open
+            Headers: {
+              Authorization: `Bearer ${token}`,
+              Accept: 'application/vnd.github.v3+json'
+            }
+            Returns:
+              {
+                lastCommit: {
+                  message: string,
+                  author: string,
+                  timestamp: number,
+                  branch: string,
+                },
+                openIssues: number,
+              }
+          })
+      - Add to preload bridge:
+          githubAPI: {
+            getStatus: (repoPath, token) =>
+              ipcRenderer.invoke('github:getStatus', { repoPath, token })
+          }
+      - Stat card display:
+          Top: last commit message truncated to 1 line
+            font-size 9px, color var(--text)
+          Middle: author + relative time
+            "erick · 3hrs ago"
+            font-size 9px, color var(--dim)
+          Bottom: branch + open issues count
+            "main · 2 open issues"
+            font-size 8px, color var(--dimmer)
+            0 issues: "main · no open issues"
+              color var(--dimmer)
+            1+ issues: color #ffc200
+      - Loading state: "// FETCHING..." in var(--dimmer)
+      - Error state: "// API ERROR" in #ff4444
+      - Refresh every 60 seconds
+
+- [x] SUPABASE stat card — live data
+
+### // MAIL — Gmail Integration
+
+- [x] Gmail OAuth — authentication flow
+      - Install dependencies:
+          npm install googleapis @google-cloud/local-auth
+      - Credentials file: electron/gmail-credentials.json
+        (already in place — do not commit this to git)
+        Add to .gitignore immediately:
+          electron/gmail-credentials.json
+          electron/gmail-token.json
+      - Token storage: electron/gmail-token.json
+        Written after first successful auth
+        Persists so user only logs in once
+
+      - Auth flow:
+          On app start, check if gmail-token.json exists
+          If yes: load token, initialize Gmail client
+          If no: trigger OAuth flow
+            Open system browser to Google consent screen
+            Use a local redirect server on port 3535 to
+            catch the OAuth callback:
+              http://localhost:3535/oauth2callback
+            On successful auth: write token to
+              electron/gmail-token.json
+            Send auth status to renderer:
+              win.webContents.send('gmail:status', status)
+          Status values:
+            'LOADING'         — checking token on startup
+            'AUTH_REQUIRED'   — no token, needs login
+            'AUTHENTICATED'   — ready
+            'ERROR'           — auth failed
+
+      - Scopes required:
+          https://www.googleapis.com/auth/gmail.readonly
+          https://www.googleapis.com/auth/gmail.send
+          https://www.googleapis.com/auth/gmail.modify
+
+      - Add to preload bridge:
+          gmailAPI: {
+            getStatus:      () => ipcRenderer.invoke('gmail:getStatus'),
+            authorize:      () => ipcRenderer.invoke('gmail:authorize'),
+            getThreads:     (pageToken?) => ipcRenderer.invoke('gmail:getThreads', { pageToken }),
+            getThread:      (threadId) => ipcRenderer.invoke('gmail:getThread', { threadId }),
+            sendEmail:      (to, subject, body, threadId?) => ipcRenderer.invoke('gmail:sendEmail', { to, subject, body, threadId }),
+            markRead:       (threadId) => ipcRenderer.invoke('gmail:markRead', { threadId }),
+            onStatus:       (cb) => ipcRenderer.on('gmail:status', cb),
+          }
+
+- [x] Gmail IPC handlers
+      - Register in main.cjs after auth is initialized:
+
+          gmail:getStatus
+          - Returns current auth status string
+
+          gmail:authorize
+          - Triggers OAuth browser flow if not authenticated
+          - Returns { success: boolean }
+
+          gmail:getThreads
+          - Args: { pageToken?: string }
+          - Fetches inbox threads via Gmail API:
+              gmail.users.threads.list({
+                userId: 'me',
+                maxResults: 30,
+                pageToken,
+                labelIds: ['INBOX']
+              })
+          - For each thread fetch snippet + headers:
+              gmail.users.threads.get({
+                userId: 'me',
+                id: thread.id,
+                format: 'metadata',
+                metadataHeaders: ['From', 'Subject', 'Date']
+              })
+          - Returns array:
+              {
+                id: string,
+                subject: string,
+                from: string,       ← sender name/email
+                snippet: string,    ← preview text
+                timestamp: number,  ← epoch ms
+                unread: boolean,    ← has UNREAD label
+              }
+          - Sort: newest first
+
+          gmail:getThread
+          - Args: { threadId: string }
+          - Fetches full thread with all messages:
+              gmail.users.threads.get({
+                userId: 'me',
+                id: threadId,
+                format: 'full'
+              })
+          - For each message extract:
+              {
+                id: string,
+                from: string,
+                to: string,
+                subject: string,
+                body: string,       ← decoded from base64
+                timestamp: number,
+                fromMe: boolean,    ← matches authenticated email
+              }
+          - Body extraction:
+              Check parts for text/plain first
+              Fall back to text/html, strip tags if needed
+              Decode from base64url:
+                Buffer.from(data, 'base64').toString('utf8')
+          - Also call gmail:markRead for this thread
+
+          gmail:sendEmail
+          - Args: { to, subject, body, threadId? }
+          - Compose RFC 2822 message:
+              From: me
+              To: {to}
+              Subject: {subject}
+              Content-Type: text/plain; charset=utf-8
+
+              {body}
+          - Encode as base64url
+          - Call gmail.users.messages.send({
+              userId: 'me',
+              requestBody: {
+                raw: encodedMessage,
+                threadId: threadId  ← if replying
+              }
+            })
+          - Returns { success: boolean, error?: string }
+
+          gmail:markRead
+          - Args: { threadId: string }
+          - Removes UNREAD label:
+              gmail.users.threads.modify({
+                userId: 'me',
+                id: threadId,
+                requestBody: {
+                  removeLabelIds: ['UNREAD']
+                }
+              })
+
+- [x] // MAIL — layout and UI

@@ -1,11 +1,12 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
+import ImageModal from './ImageModal'
 
 // ─── Shared types ─────────────────────────────────────────────────────────────
 type MessageThread = {
   id: string; name: string; number: string; snippet: string; timestamp: number; unread: boolean
 }
 type Message = {
-  id: string; body: string; timestamp: number; direction: 'inbound' | 'outbound'
+  id: string; body: string; timestamp: number; direction: 'inbound' | 'outbound'; imageUrl?: string | null
 }
 type WaChat = {
   id: string; name: string; snippet: string; timestamp: number; unread: boolean
@@ -41,10 +42,12 @@ function ConversationView({
   sending: boolean; sendError: string | null
 }) {
   const bottomRef = useRef<HTMLDivElement>(null)
+  const [modalSrc, setModalSrc] = useState<string | null>(null)
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [messages])
 
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: 'var(--bg)', overflow: 'hidden' }}>
+      {modalSrc && <ImageModal src={modalSrc} onClose={() => setModalSrc(null)} />}
       <div style={{ height: 44, borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', padding: '0 20px', flexShrink: 0 }}>
         <span style={{ fontFamily: 'var(--font-head)', fontWeight: 700, fontSize: 13, color: 'var(--accent2)' }}>{name}</span>
         {number && <span style={{ fontSize: 9, color: 'var(--dim)', marginLeft: 8 }}>{number}</span>}
@@ -65,20 +68,39 @@ function ConversationView({
             const out = m.direction === 'outbound'
             return (
               <div key={m.id} style={{ display: 'flex', flexDirection: 'column', alignItems: out ? 'flex-end' : 'flex-start', marginBottom: 8 }}>
-                <div style={{
-                  maxWidth: '65%', padding: '8px 12px',
-                  fontFamily: 'var(--font-mono)', fontSize: 11, lineHeight: 1.6,
-                  ...(out ? {
-                    background: 'transparent',
-                    border: '1px solid color-mix(in srgb, var(--accent) 40%, transparent)',
-                    color: 'var(--accent)', borderRadius: '4px 0 4px 4px',
-                  } : {
-                    background: 'var(--bg-panel)',
-                    border: '1px solid var(--border-md)',
-                    color: 'var(--text)', borderRadius: '0 4px 4px 4px',
-                  }),
-                }}>
-                  {m.body}
+                <div style={{ maxWidth: '65%', display: 'flex', flexDirection: 'column' }}>
+                  {m.body ? (
+                    <div style={{
+                      padding: '8px 12px',
+                      fontFamily: 'var(--font-mono)', fontSize: 11, lineHeight: 1.6,
+                      ...(out ? {
+                        background: 'transparent',
+                        border: '1px solid color-mix(in srgb, var(--accent) 40%, transparent)',
+                        color: 'var(--accent)', borderRadius: '4px 0 4px 4px',
+                      } : {
+                        background: 'var(--bg-panel)',
+                        border: '1px solid var(--border-md)',
+                        color: 'var(--text)', borderRadius: '0 4px 4px 4px',
+                      }),
+                    }}>
+                      {m.body}
+                    </div>
+                  ) : null}
+                  {m.imageUrl ? (
+                    <img
+                      src={m.imageUrl}
+                      alt=""
+                      onClick={() => setModalSrc(m.imageUrl!)}
+                      style={{
+                        width: '100%', height: 'auto',
+                        border: '1px solid var(--border-md)',
+                        borderRadius: out ? '4px 0 4px 4px' : '0 4px 4px 4px',
+                        marginTop: m.body ? 4 : 0,
+                        cursor: 'zoom-in',
+                        display: 'block',
+                      }}
+                    />
+                  ) : null}
                 </div>
                 <div style={{ fontSize: 8, color: 'var(--dimmer)', marginTop: 3, fontFamily: 'var(--font-mono)' }}>
                   {absTime(m.timestamp)}

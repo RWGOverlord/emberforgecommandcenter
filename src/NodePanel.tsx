@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import verses from './assets/verses.json'
+
 
 // ─── Shared ───────────────────────────────────────────────────────────────────
 function GridBg() {
@@ -328,24 +329,14 @@ function MarketsZone() {
   useEffect(() => {
     async function fetchAll() {
       setLoading(true)
-      const results = await Promise.all(TICKERS.map(async t => {
-        try {
-          const res = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${t.symbol}`)
-          if (!res.ok) return null
-          const json = await res.json() as { chart?: { result?: Array<{ meta?: { regularMarketPrice?: number; previousClose?: number } }> } }
-          const meta = json?.chart?.result?.[0]?.meta
-          if (!meta?.regularMarketPrice) return null
-          return { price: meta.regularMarketPrice, prevClose: meta.previousClose ?? meta.regularMarketPrice }
-        } catch { return null }
-      }))
-      setRows(TICKERS.map((t, i) => ({
-        label: t.label, group: t.group,
-        price:     results[i]?.price     ?? null,
-        prevClose: results[i]?.prevClose ?? null,
-        error:     results[i] === null,
-      })))
+      try {
+        const quotes = await window.electronAPI?.marketAPI?.getQuotes()
+        if (quotes) {
+          setRows(quotes as MarketRow[])
+          setLastUpdated(new Date())
+        }
+      } catch { /* leave rows as error state */ }
       setLoading(false)
-      setLastUpdated(new Date())
     }
 
     void fetchAll()
@@ -410,19 +401,213 @@ function MarketsZone() {
   )
 }
 
+// ─── REMINDERS zone ───────────────────────────────────────────────────────────
+type Reminder = { title: string; due: string | null; done: boolean }
+
+function parseReminders(content: string): Reminder[] {
+  return content.split('\n')
+    .filter(l => /^- \[[ x]\] /.test(l))
+    .map(l => {
+      const done = l[3] === 'x'
+      const parts = l.slice(6).split(' | ')
+      const title = parts[0].trim()
+      let due: string | null = null
+      for (const p of parts.slice(1)) {
+        if (p.startsWith('due:')) { const v = p.slice(4).trim(); due = v === 'none' ? null : v }
+      }
+      return { title, due, done }
+    })
+}
+
+function serializeReminders(items: Reminder[]): string {
+  const lines = ['# REMINDERS', '']
+  for (const r of items) {
+    const duePart = r.due ? `due:${r.due}` : 'due:none'
+    lines.push(`- [${r.done ? 'x' : ' '}] ${r.title} | ${duePart}${r.done ? ' | archived' : ''}`)
+  }
+  return lines.join('\n') + '\n'
+}
+
+type RStatus = 'overdue' | 'today' | 'upcoming' | 'none' | 'archived'
+const R_RANK: Record<RStatus, number> = { overdue: 0, today: 1, upcoming: 2, none: 3, archived: 4 }
+
+function rStatus(r: Reminder): RStatus {
+  if (r.done) return 'archived'
+  if (!r.due) return 'none'
+  const today = new Date().toISOString().slice(0, 10)
+  if (r.due < today) return 'overdue'
+  if (r.due === today) return 'today'
+  return 'upcoming'
+}
+
+function dueBadge(r: Reminder): { text: string; color: string } {
+  const s = rStatus(r)
+  if (s === 'archived') return { text: 'ARCHIVED',    color: 'var(--dimmer)' }
+  if (s === 'none')     return { text: 'NO DUE DATE', color: 'var(--dimmer)' }
+  const fmt = new Date((r.due ?? '') + 'T12:00:00')
+    .toLocaleDateString('en-US', { month: 'short', day: 'numeric' }).toUpperCase()
+  if (s === 'overdue') return { text: `⚠ DUE ${fmt}`, color: '#ff4444' }
+  if (s === 'today')   return { text: '⚠ DUE TODAY',  color: '#ffc200' }
+  return { text: `DUE ${fmt}`, color: 'var(--dim)' }
+}
+
+const REMINDER_CARD_BASE: React.CSSProperties = {
+  minWidth: 180, maxWidth: 220, flexShrink: 0, position: 'relative',
+  border: '1px solid var(--border-md)', background: 'var(--bg-panel)', padding: '8px 10px',
+}
+
+function ReminderEditForm({ titleRef, formTitle, setFormTitle, formDue, setFormDue, onSave, onClose }: {
+  titleRef: React.RefObject<HTMLInputElement | null>
+  formTitle: string; setFormTitle: (v: string) => void
+  formDue: string;   setFormDue:   (v: string) => void
+  onSave: () => void; onClose: () => void
+}) {
+  return (
+    <div style={{ ...REMINDER_CARD_BASE, border: '1px solid var(--accent)' }}>
+      <input
+        ref={titleRef}
+        value={formTitle}
+        onChange={e => setFormTitle(e.target.value)}
+        onKeyDown={e => { if (e.key === 'Enter') onSave(); if (e.key === 'Escape') onClose() }}
+        placeholder="reminder title..."
+        style={{ width: '100%', boxSizing: 'border-box', fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--text)', background: 'transparent', border: 'none', borderBottom: '1px solid var(--border-md)', padding: '2px 0', outline: 'none' }}
+      />
+      <input
+        type="date"
+        value={formDue}
+        onChange={e => setFormDue(e.target.value)}
+        style={{ width: '100%', boxSizing: 'border-box', marginTop: 6, fontFamily: 'var(--font-mono)', fontSize: 9, color: 'var(--dim)', background: 'var(--bg)', border: '1px solid var(--border-md)', padding: '3px 6px', outline: 'none', accentColor: 'var(--accent)', colorScheme: 'dark' } as React.CSSProperties}
+      />
+      <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+        <button onClick={onSave}  style={{ flex: 1, padding: '3px 0', fontSize: 8, letterSpacing: 1, border: '1px solid var(--accent)',  color: 'var(--accent)',  background: 'transparent', cursor: 'pointer', fontFamily: 'var(--font-mono)' }}>[ SAVE ]</button>
+        <button onClick={onClose} style={{ flex: 1, padding: '3px 0', fontSize: 8, letterSpacing: 1, border: '1px solid var(--dimmer)', color: 'var(--dimmer)', background: 'transparent', cursor: 'pointer', fontFamily: 'var(--font-mono)' }}>[ CANCEL ]</button>
+      </div>
+    </div>
+  )
+}
+
+function RemindersZone() {
+  const [reminders,   setReminders]   = useState<Reminder[]>([])
+  const [loaded,      setLoaded]      = useState(false)
+  const [editingIdx,  setEditingIdx]  = useState<number | null>(null)
+  const [adding,      setAdding]      = useState(false)
+  const [formTitle,   setFormTitle]   = useState('')
+  const [formDue,     setFormDue]     = useState('')
+  const titleRef = useRef<HTMLInputElement>(null)
+
+  const load = useCallback(async () => {
+    const res = await window.electronAPI?.remindersAPI?.read()
+    if (res) { setReminders(parseReminders(res.content)); setLoaded(true) }
+  }, [])
+
+  useEffect(() => { void load() }, [load])
+
+  async function save(updated: Reminder[]) {
+    setReminders(updated)
+    await window.electronAPI?.remindersAPI?.write(serializeReminders(updated))
+  }
+
+  function openAdd() {
+    setFormTitle(''); setFormDue(''); setEditingIdx(null); setAdding(true)
+    setTimeout(() => titleRef.current?.focus(), 0)
+  }
+
+  function openEdit(idx: number) {
+    const r = reminders[idx]
+    setFormTitle(r.title); setFormDue(r.due ?? ''); setAdding(false); setEditingIdx(idx)
+    setTimeout(() => titleRef.current?.focus(), 0)
+  }
+
+  function closeForm() { setAdding(false); setEditingIdx(null); setFormTitle(''); setFormDue('') }
+
+  async function handleSave() {
+    const title = formTitle.trim()
+    if (!title) return
+    const due = formDue || null
+    const updated = [...reminders]
+    if (adding) {
+      updated.push({ title, due, done: false })
+    } else if (editingIdx !== null) {
+      updated[editingIdx] = { ...updated[editingIdx], title, due }
+    }
+    await save(updated)
+    closeForm()
+  }
+
+  const sorted = [...reminders]
+    .map((r, origIdx) => ({ ...r, origIdx }))
+    .sort((a, b) => {
+      const diff = R_RANK[rStatus(a)] - R_RANK[rStatus(b)]
+      if (diff !== 0) return diff
+      if (a.due && b.due) return a.due.localeCompare(b.due)
+      return 0
+    })
+
+  const editFormProps = { titleRef, formTitle, setFormTitle, formDue, setFormDue, onSave: () => void handleSave(), onClose: closeForm }
+
+  return (
+    <div style={{ gridColumn: '1 / -1', borderTop: '1px solid var(--border)', borderBottom: '1px solid var(--border)', minHeight: 80, maxHeight: 140, padding: '10px 20px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
+        <div style={{ fontSize: 8, color: 'var(--dim)', letterSpacing: 3, fontFamily: 'var(--font-mono)' }}>// REMINDERS</div>
+        <button
+          onClick={openAdd}
+          onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--accent)'; e.currentTarget.style.color = 'var(--accent)' }}
+          onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border-md)'; e.currentTarget.style.color = 'var(--dimmer)' }}
+          style={{ padding: '3px 8px', fontSize: 8, letterSpacing: 2, border: '1px solid var(--border-md)', color: 'var(--dimmer)', background: 'transparent', cursor: 'pointer', fontFamily: 'var(--font-mono)', transition: 'all 0.15s ease' }}
+        >[ + ADD ]</button>
+      </div>
+
+      {loaded && reminders.length === 0 && !adding ? (
+        <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 6 }}>
+          <span style={{ fontSize: 9, color: 'var(--dimmer)', letterSpacing: 2, fontFamily: 'var(--font-mono)' }}>// NO REMINDERS —</span>
+          <button onClick={openAdd} style={{ fontSize: 9, color: 'var(--accent)', letterSpacing: 2, fontFamily: 'var(--font-mono)', background: 'transparent', border: 'none', cursor: 'pointer', padding: 0 }}>[ + ADD ]</button>
+        </div>
+      ) : (
+        <div style={{ display: 'flex', gap: 12, overflowX: 'auto', paddingBottom: 4, flex: 1 }}>
+          {adding && <ReminderEditForm {...editFormProps} />}
+          {sorted.map(r => {
+            if (editingIdx === r.origIdx) return <ReminderEditForm key={`edit-${r.origIdx}`} {...editFormProps} />
+            const badge = dueBadge(r)
+            const dimmed = r.done
+            return (
+              <div key={r.origIdx} style={{ ...REMINDER_CARD_BASE, cursor: 'pointer' }} onClick={() => openEdit(r.origIdx)}>
+                <button
+                  onClick={e => { e.stopPropagation(); void save(reminders.filter((_, i) => i !== r.origIdx)) }}
+                  onMouseEnter={e => { e.currentTarget.style.color = '#ff4444' }}
+                  onMouseLeave={e => { e.currentTarget.style.color = 'var(--dimmer)' }}
+                  style={{ position: 'absolute', top: 4, right: 6, background: 'transparent', border: 'none', cursor: 'pointer', fontSize: 8, color: 'var(--dimmer)', padding: 0, lineHeight: 1 }}
+                >×</button>
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6, marginRight: 14, marginBottom: 4 }}>
+                  <div
+                    onClick={e => { e.stopPropagation(); void save(reminders.map((m, i) => i === r.origIdx ? { ...m, done: !m.done } : m)) }}
+                    style={{ width: 10, height: 10, flexShrink: 0, marginTop: 1, border: `1px solid ${r.done ? 'var(--accent2)' : 'var(--dim)'}`, color: r.done ? 'var(--accent2)' : 'transparent', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 8, lineHeight: 1 }}
+                  >{r.done ? '✓' : ''}</div>
+                  <div style={{ fontSize: 9, letterSpacing: 0.5, fontFamily: 'var(--font-mono)', color: dimmed ? 'var(--dimmer)' : 'var(--text)', textDecoration: dimmed ? 'line-through' : 'none', overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' } as React.CSSProperties}>
+                    {r.title}
+                  </div>
+                </div>
+                <div style={{ fontSize: 8, letterSpacing: 1, fontFamily: 'var(--font-mono)', color: badge.color }}>{badge.text}</div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ─── QUICK LAUNCH zone ────────────────────────────────────────────────────────
-const LAUNCH_APPS = [
+const DEFAULT_LAUNCH_APPS = [
   { label: 'VS CODE', path: '/Applications/Visual Studio Code.app' },
   { label: 'BRAVE',   path: '/Applications/Brave Browser.app'      },
 ]
 
+export type QuickLaunchApp = { label: string; path: string }
+
 function LaunchBtn({ label, appPath }: { label: string; appPath: string }) {
-  function launch() {
-    void window.electronAPI?.openApp(appPath)
-  }
   return (
     <button
-      onClick={launch}
+      onClick={() => void window.electronAPI?.openApp(appPath)}
       onMouseEnter={e => {
         e.currentTarget.style.borderColor = 'var(--accent)'
         e.currentTarget.style.color       = 'var(--accent)'
@@ -449,7 +634,8 @@ function LaunchBtn({ label, appPath }: { label: string; appPath: string }) {
   )
 }
 
-function QuickLaunchZone() {
+function QuickLaunchZone({ apps }: { apps?: QuickLaunchApp[] }) {
+  const items = apps ?? DEFAULT_LAUNCH_APPS
   return (
     <div style={{
       gridColumn: '1 / -1',
@@ -458,7 +644,7 @@ function QuickLaunchZone() {
       display: 'flex', alignItems: 'center', gap: 16,
     }}>
       <ZoneLabel text="// QUICK LAUNCH" />
-      {LAUNCH_APPS.map(app => (
+      {items.map(app => (
         <LaunchBtn key={app.label} label={app.label} appPath={app.path} />
       ))}
     </div>
@@ -466,7 +652,7 @@ function QuickLaunchZone() {
 }
 
 // ─── NodePanel ────────────────────────────────────────────────────────────────
-export default function NodePanel() {
+export default function NodePanel({ quickLaunchApps }: { quickLaunchApps?: QuickLaunchApp[] }) {
   return (
     <div style={{ flex: 1, position: 'relative', background: 'var(--bg)', overflow: 'hidden' }}>
       <GridBg />
@@ -476,13 +662,14 @@ export default function NodePanel() {
         position: 'absolute', inset: 0, zIndex: 1,
         display: 'grid',
         gridTemplateColumns: '1fr 1fr',
-        gridTemplateRows: 'auto 1fr auto',
+        gridTemplateRows: 'auto 1fr auto auto',
       }}>
         <WordZone />
         <TimeZone />
         <WeatherZone />
         <MarketsZone />
-        <QuickLaunchZone />
+        <RemindersZone />
+        <QuickLaunchZone apps={quickLaunchApps} />
       </div>
     </div>
   )

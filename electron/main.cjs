@@ -266,6 +266,36 @@ function extractBodyFromParts(parts) {
   return '';
 }
 
+function extractHtmlFromParts(parts) {
+  if (!parts) return '';
+  for (const part of parts) {
+    if (part.mimeType === 'text/html' && part.body?.data) return decodeBase64Body(part.body.data);
+    if (part.parts) {
+      const nested = extractHtmlFromParts(part.parts);
+      if (nested) return nested;
+    }
+  }
+  return '';
+}
+
+function collectInlineImages(parts, result = []) {
+  if (!parts) return result;
+  for (const part of parts) {
+    if (part.mimeType?.startsWith('image/') && part.body?.attachmentId) {
+      const cidHeader = (part.headers || []).find(h => h.name.toLowerCase() === 'content-id');
+      if (cidHeader) {
+        result.push({
+          cid: cidHeader.value.replace(/[<>]/g, '').trim(),
+          attachmentId: part.body.attachmentId,
+          mimeType: part.mimeType,
+        });
+      }
+    }
+    if (part.parts) collectInlineImages(part.parts, result);
+  }
+  return result;
+}
+
 // ─── Pushbullet constants and state ──────────────────────────────────────────
 const PB_BASE = 'https://api.pushbullet.com/v2';
 
@@ -309,6 +339,7 @@ function mapPbMessages(msgs) {
     body: m.body || '',
     timestamp: (m.timestamp || 0) * 1000,
     direction: m.direction === 'outgoing' ? 'outbound' : 'inbound',
+    imageUrl: m.image_url || null,
   })).sort((a, b) => a.timestamp - b.timestamp);
 }
 
@@ -566,6 +597,42 @@ app.whenReady().then(() => {
   // ─── Settings ────────────────────────────────────────────────────────────
   ipcMain.handle('settings:set', (_e, { key, value }) => { store.set(key, value); });
   ipcMain.handle('settings:get', (_e, { key }) => store.get(key));
+  ipcMain.handle('settings:writeEnv', (_e, { key, value }) => {
+    const envPath = path.join(__dirname, '../.env');
+    let content = '';
+    try { content = fs.readFileSync(envPath, 'utf8'); } catch {}
+    const regex = new RegExp(`^${key}=.*$`, 'm');
+    if (regex.test(content)) {
+      content = content.replace(regex, `${key}=${value}`);
+    } else {
+      content = content + (content.endsWith('\n') ? '' : '\n') + `${key}=${value}\n`;
+    }
+    fs.writeFileSync(envPath, content);
+    return { success: true };
+  });
+
+  // ─── Reminders ───────────────────────────────────────────────────────────
+  const REMINDERS_PATH = path.resolve(__dirname, '..', 'REMINDERS.md');
+
+  ipcMain.handle('reminders:read', () => {
+    try {
+      const content = fs.readFileSync(REMINDERS_PATH, 'utf-8');
+      return { content };
+    } catch {
+      const empty = '# REMINDERS\n';
+      fs.writeFileSync(REMINDERS_PATH, empty, 'utf-8');
+      return { content: empty };
+    }
+  });
+
+  ipcMain.handle('reminders:write', (_e, { content }) => {
+    try {
+      fs.writeFileSync(REMINDERS_PATH, content, 'utf-8');
+      return { success: true };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  });
 
   // ─── Project file operations ─────────────────────────────────────────────
   ipcMain.handle('project:readFile', (_e, { repoPath, filename }) => {
@@ -610,6 +677,184 @@ app.whenReady().then(() => {
     } catch (err) {
       return { success: false, output: '', error: err.message };
     }
+  });
+
+  // ─── Vercel IPC ──────────────────────────────────────────────────────────
+  ipcMain.handle('vercel:getStatus', async (_e, { projectId, teamId, token }) => {
+    try {
+      const params = new URLSearchParams({ projectId, limit: '1', target: 'production' });
+      if (teamId) params.set('teamId', teamId);
+      const res = await fetch(
+        `https://api.vercel.com/v6/deployments?${params}`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      const json = await res.json();
+      if (!res.ok) return { error: json.error?.message ?? `HTTP ${res.status}` };
+      const d = json.deployments?.[0];
+      if (!d) return { error: 'NO_DEPLOYMENT' };
+      return {
+        state:     d.state,
+        createdAt: d.createdAt ?? d.created,
+        meta: {
+          githubCommitMessage: d.meta?.githubCommitMessage ?? '',
+          githubCommitRef:     d.meta?.githubCommitRef     ?? '',
+        },
+      };
+    } catch (err) {
+      return { error: err.message };
+    }
+  });
+
+  ipcMain.handle('vercel:getLogs', async (_e, { projectId, teamId, token }) => {
+    try {
+      const deplParams = new URLSearchParams({ projectId, limit: '1', target: 'production' });
+      if (teamId) deplParams.set('teamId', teamId);
+      const deplRes = await fetch(`https://api.vercel.com/v6/deployments?${deplParams}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const deplJson = await deplRes.json();
+      if (!deplRes.ok) return { error: deplJson.error?.message ?? `HTTP ${deplRes.status}` };
+      const uid = deplJson.deployments?.[0]?.uid;
+      if (!uid) return { error: 'NO_DEPLOYMENT' };
+
+      const eventsParams = new URLSearchParams({ limit: '50', direction: 'backward' });
+      if (teamId) eventsParams.set('teamId', teamId);
+      const logsRes = await fetch(`https://api.vercel.com/v2/deployments/${uid}/events?${eventsParams}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const logsRaw = await logsRes.json();
+      if (!logsRes.ok) return { error: logsRaw.error?.message ?? `HTTP ${logsRes.status}` };
+      const events = Array.isArray(logsRaw) ? logsRaw : (logsRaw.events ?? []);
+      const logs = events
+        .filter(e => e.type === 'stdout' || e.type === 'stderr' || e.type === 'command')
+        .slice(0, 50)
+        .map(e => ({
+          timestamp: e.created ?? e.createdAt ?? Date.now(),
+          level: e.type === 'stderr' ? 'error' : 'info',
+          message: (e.payload?.text ?? e.text ?? '').trim(),
+          source: e.source ?? 'build',
+        }))
+        .filter(e => e.message);
+      return { logs };
+    } catch (err) {
+      return { error: err.message };
+    }
+  });
+
+  ipcMain.handle('github:getCommits', async (_e, { repoPath, token }) => {
+    try {
+      const remote = execSync('git remote get-url origin', { encoding: 'utf8', cwd: repoPath }).trim();
+      const match = remote.match(/github\.com[:/]([^/]+)\/(.+?)(?:\.git)?$/);
+      if (!match) return { error: 'CANNOT_PARSE_REMOTE' };
+      const [, owner, repo] = match;
+      const res = await fetch(`https://api.github.com/repos/${owner}/${repo}/commits?per_page=20`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: 'application/vnd.github.v3+json',
+          'User-Agent': 'EmberforgeCommandCenter',
+        },
+      });
+      const json = await res.json();
+      if (!res.ok) return { error: json.message ?? `HTTP ${res.status}` };
+      const commits = (Array.isArray(json) ? json : []).map(c => ({
+        sha:       c.sha?.slice(0, 7) ?? '',
+        message:   c.commit?.message?.split('\n')[0] ?? '',
+        author:    c.commit?.author?.name ?? '',
+        timestamp: new Date(c.commit?.author?.date ?? 0).getTime(),
+        url:       c.html_url ?? '',
+      }));
+      return { commits };
+    } catch (err) {
+      return { error: err.message };
+    }
+  });
+
+  ipcMain.handle('github:getStatus', async (_e, { repoPath, token }) => {
+    try {
+      const remote = execSync('git remote get-url origin', { encoding: 'utf8', cwd: repoPath }).trim();
+      const match = remote.match(/github\.com[:/]([^/]+)\/(.+?)(?:\.git)?$/);
+      if (!match) return { error: 'CANNOT_PARSE_REMOTE' };
+      const [, owner, repo] = match;
+      const headers = {
+        Authorization: `Bearer ${token}`,
+        Accept: 'application/vnd.github.v3+json',
+        'User-Agent': 'EmberforgeCommandCenter',
+      };
+      const [commitsRes, issuesRes] = await Promise.all([
+        fetch(`https://api.github.com/repos/${owner}/${repo}/commits?per_page=1`, { headers }),
+        fetch(`https://api.github.com/repos/${owner}/${repo}/issues?state=open&per_page=1`, { headers }),
+      ]);
+      const commits = await commitsRes.json();
+      const issues  = await issuesRes.json();
+      const c = Array.isArray(commits) ? commits[0] : null;
+      if (!c) return { error: 'NO_COMMITS' };
+      const issueCount = issuesRes.headers.get('link')
+        ? (() => {
+            const link = issuesRes.headers.get('link') ?? '';
+            const lastMatch = link.match(/page=(\d+)>; rel="last"/);
+            return lastMatch ? parseInt(lastMatch[1], 10) : (Array.isArray(issues) ? issues.length : 0);
+          })()
+        : (Array.isArray(issues) ? issues.length : 0);
+      const branch = execSync('git rev-parse --abbrev-ref HEAD', { encoding: 'utf8', cwd: repoPath }).trim();
+      return {
+        lastCommit: {
+          message:   c.commit.message.split('\n')[0],
+          author:    c.commit.author.name,
+          timestamp: new Date(c.commit.author.date).getTime(),
+          branch,
+        },
+        openIssues: issueCount,
+      };
+    } catch (err) {
+      return { error: err.message };
+    }
+  });
+
+  ipcMain.handle('supabase:getStatus', async (_e, { projectUrl, anonKey }) => {
+    try {
+      const base = projectUrl.startsWith('http') ? projectUrl.replace(/\/$/, '') : `https://${projectUrl.replace(/\/$/, '')}`;
+      await fetch(`${base}/rest/v1/`, {
+        headers: { apikey: anonKey, Authorization: `Bearer ${anonKey}` },
+        signal: AbortSignal.timeout(8000),
+      });
+      return { healthy: true };
+    } catch (err) {
+      return { healthy: false, errorMessage: err.message };
+    }
+  });
+
+  // ─── Market quotes IPC ───────────────────────────────────────────────────
+  ipcMain.handle('market:getQuotes', async () => {
+    const TICKERS = [
+      { symbol: 'BTC-USD', label: 'BTC',    group: 'crypto' },
+      { symbol: 'XRP-USD', label: 'XRP',    group: 'crypto' },
+      { symbol: 'GC=F',    label: 'GOLD',   group: 'metal'  },
+      { symbol: 'SI=F',    label: 'SILVER', group: 'metal'  },
+    ];
+    const YF_HEADERS = {
+      'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+      'Accept': 'application/json',
+      'Accept-Language': 'en-US,en;q=0.9',
+    };
+    const results = await Promise.all(TICKERS.map(async t => {
+      try {
+        const res = await fetch(
+          `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(t.symbol)}`,
+          { headers: YF_HEADERS, signal: AbortSignal.timeout(10000) }
+        );
+        if (!res.ok) return null;
+        const json = await res.json();
+        const meta = json?.chart?.result?.[0]?.meta;
+        if (!meta?.regularMarketPrice) return null;
+        return { price: meta.regularMarketPrice, prevClose: meta.previousClose ?? meta.regularMarketPrice };
+      } catch { return null; }
+    }));
+    return TICKERS.map((t, i) => ({
+      label: t.label, group: t.group,
+      price:     results[i]?.price     ?? null,
+      prevClose: results[i]?.prevClose ?? null,
+      error:     results[i] === null,
+    }));
   });
 
   // ─── Pushbullet / Messages IPC ───────────────────────────────────────────
@@ -764,22 +1009,43 @@ app.whenReady().then(() => {
         myEmail = profile.data.emailAddress || '';
       } catch {}
 
-      const messages = (res.data.messages || []).map((msg) => {
+      const messages = await Promise.all((res.data.messages || []).map(async (msg) => {
         const headers = msg.payload?.headers || [];
         const { from, to, subject, date } = parseGmailHeaders(headers, 'From', 'To', 'Subject', 'Date');
         const body = msg.payload?.parts
           ? extractBodyFromParts(msg.payload.parts)
           : decodeBase64Body(msg.payload?.body?.data);
+
+        let htmlBody = '';
+        const htmlRaw = msg.payload?.parts
+          ? extractHtmlFromParts(msg.payload.parts)
+          : (msg.payload?.mimeType === 'text/html' ? decodeBase64Body(msg.payload?.body?.data) : '');
+        if (htmlRaw) {
+          const inlineImages = collectInlineImages(msg.payload?.parts || []);
+          const cidMap = {};
+          await Promise.all(inlineImages.map(async img => {
+            try {
+              const att = await gmailService.users.messages.attachments.get({
+                userId: 'me', messageId: msg.id, id: img.attachmentId,
+              });
+              const data = att.data.data?.replace(/-/g, '+').replace(/_/g, '/') ?? '';
+              cidMap[img.cid] = `data:${img.mimeType};base64,${data}`;
+            } catch {}
+          }));
+          htmlBody = htmlRaw.replace(/src="cid:([^"]+)"/g, (_, cid) => `src="${cidMap[cid] ?? ''}"`);
+        }
+
         return {
           id: msg.id,
           from,
           to,
           subject,
           body,
+          htmlBody,
           timestamp: date ? new Date(date).getTime() : 0,
           fromMe: from.includes(myEmail) && myEmail !== '',
         };
-      });
+      }));
 
       void gmailService.users.threads.modify({
         userId: 'me',

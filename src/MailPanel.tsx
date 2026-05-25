@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
+import ImageModal from './ImageModal'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type GmailThread = {
@@ -16,6 +17,7 @@ type GmailMessage = {
   to: string
   subject: string
   body: string
+  htmlBody?: string
   timestamp: number
   fromMe: boolean
 }
@@ -43,6 +45,17 @@ function senderName(from: string): string {
   const match = from.match(/^"?([^"<]+)"?\s*</)
   if (match) return match[1].trim()
   return from.replace(/<[^>]+>/, '').trim() || from
+}
+
+function sanitizeHtml(html: string): string {
+  const doc = new DOMParser().parseFromString(html, 'text/html')
+  doc.querySelectorAll('script, style').forEach(el => el.remove())
+  doc.querySelectorAll('*').forEach(el => {
+    Array.from(el.attributes).forEach(attr => {
+      if (attr.name.startsWith('on')) el.removeAttribute(attr.name)
+    })
+  })
+  return doc.body.innerHTML
 }
 
 // ─── Compose new email ────────────────────────────────────────────────────────
@@ -194,6 +207,7 @@ function EmailView({ messages, loading, onReply }: {
   const [replyBody, setReplyBody]       = useState('')
   const [sending, setSending]           = useState(false)
   const [sendStatus, setSendStatus]     = useState<'idle' | 'sent' | 'failed'>('idle')
+  const [modalSrc, setModalSrc]         = useState<string | null>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   useEffect(() => { setShowComposer(false); setReplyBody(''); setSendStatus('idle') }, [messages])
@@ -263,7 +277,7 @@ function EmailView({ messages, loading, onReply }: {
       </div>
 
       {/* Email body */}
-      <div style={{ flex: 1, overflowY: 'auto', padding: 20, fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--text)', lineHeight: 1.8, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+      <div style={{ flex: 1, overflowY: 'auto', padding: 20, fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--text)', lineHeight: 1.8, wordBreak: 'break-word' }}>
         {messages.length > 1 && (
           <div style={{ marginBottom: 20 }}>
             {messages.slice(0, -1).map(m => (
@@ -271,7 +285,10 @@ function EmailView({ messages, loading, onReply }: {
                 <div style={{ fontSize: 8, color: 'var(--dimmer)', letterSpacing: 2, marginBottom: 6 }}>
                   {m.fromMe ? 'YOU' : senderName(m.from)} — {absDate(m.timestamp)}
                 </div>
-                <div style={{ fontSize: 11, color: 'var(--dim)', lineHeight: 1.7, whiteSpace: 'pre-wrap' }}>{m.body}</div>
+                {m.htmlBody
+                  ? <div className="email-body" dangerouslySetInnerHTML={{ __html: sanitizeHtml(m.htmlBody) }} onClick={e => { const t = e.target as HTMLElement; if (t.tagName === 'IMG') { const src = (t as HTMLImageElement).src; if (src) setModalSrc(src) } }} />
+                  : <div style={{ fontSize: 11, color: 'var(--dim)', lineHeight: 1.7, whiteSpace: 'pre-wrap' }}>{m.body}</div>
+                }
               </div>
             ))}
           </div>
@@ -282,7 +299,10 @@ function EmailView({ messages, loading, onReply }: {
               {last.fromMe ? 'YOU' : senderName(last.from)} — {absDate(last.timestamp)}
             </div>
           )}
-          {last.body || <span style={{ color: 'var(--dimmer)', fontStyle: 'italic' }}>(empty)</span>}
+          {last.htmlBody
+            ? <div className="email-body" dangerouslySetInnerHTML={{ __html: sanitizeHtml(last.htmlBody) }} onClick={e => { const t = e.target as HTMLElement; if (t.tagName === 'IMG') { const src = (t as HTMLImageElement).src; if (src) setModalSrc(src) } }} />
+            : <div style={{ whiteSpace: 'pre-wrap' }}>{last.body || <span style={{ color: 'var(--dimmer)', fontStyle: 'italic' }}>(empty)</span>}</div>
+          }
         </div>
       </div>
 
@@ -335,6 +355,7 @@ function EmailView({ messages, loading, onReply }: {
           )}
         </div>
       )}
+      {modalSrc && <ImageModal src={modalSrc} onClose={() => setModalSrc(null)} />}
     </div>
   )
 }

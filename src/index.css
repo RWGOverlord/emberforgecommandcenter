@@ -3,6 +3,15 @@
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 :root {
+  /* font scale — S default (updated by applyFontSize) */
+  --fs-xs:   8px;
+  --fs-sm:   9px;
+  --fs-base: 10px;
+  --fs-md:   11px;
+  --fs-lg:   12px;
+  --fs-xl:   13px;
+  --fs-head: 14px;
+
   /* ICY BLUE default */
   --bg:        #020810;
   --bg-panel:  #020d1a;
@@ -68,3 +77,9 @@ html, body, #root {
   0%,100% { box-shadow: 0 0 8px #00d4ff44; }
   50%      { box-shadow: 0 0 18px #00d4ff88; }
 }
+
+/* Email HTML body rendering */
+.email-body img { max-width: 100%; height: auto; border: 1px solid var(--border-md); margin: 8px 0; cursor: zoom-in; display: block; }
+.email-body a { color: var(--accent); text-decoration: none; border-bottom: 1px solid #00d4ff44; }
+.email-body p, .email-body div { color: var(--text); font-family: var(--font-mono); font-size: 12px; line-height: 1.8; }
+.email-body table { max-width: 100%; border-collapse: collapse; }

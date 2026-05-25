@@ -17,8 +17,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   openInVSCode: (repoPath) => ipcRenderer.invoke('app:openInVSCode', repoPath),
 
   settingsAPI: {
-    set: (key, value) => ipcRenderer.invoke('settings:set', { key, value }),
-    get: (key)        => ipcRenderer.invoke('settings:get', { key }),
+    set:      (key, value)        => ipcRenderer.invoke('settings:set',      { key, value }),
+    get:      (key)               => ipcRenderer.invoke('settings:get',      { key }),
+    writeEnv: (key, value)        => ipcRenderer.invoke('settings:writeEnv', { key, value }),
   },
 
   projectAPI: {
@@ -45,6 +46,24 @@ contextBridge.exposeInMainWorld('electronAPI', {
     },
   },
 
+  vercelAPI: {
+    getStatus: (projectId, teamId, token) => ipcRenderer.invoke('vercel:getStatus', { projectId, teamId, token }),
+    getLogs:   (projectId, teamId, token) => ipcRenderer.invoke('vercel:getLogs',   { projectId, teamId, token }),
+  },
+
+  githubAPI: {
+    getStatus:   (repoPath, token) => ipcRenderer.invoke('github:getStatus',   { repoPath, token }),
+    getCommits:  (repoPath, token) => ipcRenderer.invoke('github:getCommits',  { repoPath, token }),
+  },
+
+  supabaseAPI: {
+    getStatus: (projectUrl, anonKey) => ipcRenderer.invoke('supabase:getStatus', { projectUrl, anonKey }),
+  },
+
+  marketAPI: {
+    getQuotes: () => ipcRenderer.invoke('market:getQuotes'),
+  },
+
   gmailAPI: {
     getStatus:  ()                              => ipcRenderer.invoke('gmail:getStatus'),
     authorize:  ()                              => ipcRenderer.invoke('gmail:authorize'),
@@ -54,6 +73,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     markRead:   (threadId)                      => ipcRenderer.invoke('gmail:markRead',   { threadId }),
     onStatus:   (cb)                            => ipcRenderer.on('gmail:status', (_e, s) => cb(s)),
     offStatus:  ()                              => ipcRenderer.removeAllListeners('gmail:status'),
+  },
+
+  remindersAPI: {
+    read:  ()          => ipcRenderer.invoke('reminders:read'),
+    write: (content)   => ipcRenderer.invoke('reminders:write', { content }),
   },
 
   messagesAPI: {
