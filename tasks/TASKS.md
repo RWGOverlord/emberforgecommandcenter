@@ -1,7 +1,92 @@
 # EMBERFORGE COMMAND CENTER — TASKS
 
 ## In Progress
-- [ ] Architecture map — per project visual dependency graph
+- [ ] Refactor — split App.tsx into component files
+      - IMPORTANT: this is a refactor only
+        Zero functional changes — UI must look and
+        behave identically before and after
+        Do not add features during this refactor
+
+      - Create src/components/ folder structure:
+          src/components/
+            Sidebar.tsx
+            StatusBar.tsx
+            NodePanel.tsx
+            projects/
+              ProjectList.tsx
+              ProjectDetail.tsx
+              ProjectOverview.tsx
+              ProjectArchMap.tsx    ← stub, empty for now
+              ProjectAgent.tsx
+              ProjectLogs.tsx
+              StatCard.tsx
+            vault/
+              VaultSidebar.tsx
+              VaultFileList.tsx
+              VaultEditor.tsx
+            mail/
+              MailList.tsx
+              MailDetail.tsx
+              MailCompose.tsx
+            comms/
+              CommsList.tsx
+              CommsThread.tsx
+            system/
+              SystemDisplay.tsx
+              SystemConnections.tsx
+              SystemQuickLaunch.tsx
+              SystemVaultPath.tsx
+              SystemAbout.tsx
+            shared/
+              ImageModal.tsx
+              EmptyState.tsx
+
+      - Move each component out of App.tsx into
+        its own file
+        Props and state interfaces move with the component
+        Local state stays local where possible
+        Shared state (activeSection, selectedProject, etc.)
+        stays in App.tsx and passed as props
+
+      - App.tsx after refactor should contain only:
+          - Global state (activeSection, selectedItem, etc.)
+          - Boot animation logic
+          - Root layout (sidebar + main content area)
+          - Conditional rendering based on activeSection
+          - Global useEffects (brightness, font size,
+            text contrast on mount)
+          - Nothing else
+
+      - After each component is extracted:
+          Verify app still compiles: npm run build
+          Fix any type errors before moving to next
+          component
+          Do one component at a time — do not extract
+          everything at once
+
+      - Order to extract (least risky first):
+          1. StatusBar
+          2. EmptyState (shared)
+          3. Sidebar
+          4. NodePanel
+          5. StatCard
+          6. ProjectLogs
+          7. ProjectAgent
+          8. ProjectOverview (overview tab)
+          9. ProjectDetail (wrapper)
+          10. ProjectList
+          11. VaultFileList
+          12. VaultEditor
+          13. MailList + MailDetail + MailCompose
+          14. CommsList + CommsThread
+          15. SystemDisplay + other system panels
+          16. ImageModal (shared)
+          17. ProjectArchMap stub (empty component,
+              returns placeholder div only)
+
+      - Build must pass clean after every extraction
+        tsc + vite build, 0 errors, 0 warnings
+- [x] Architecture map — per project visual dependency graph
       - PLANNED FEATURE — full spec to be written after
         JSDoc commenting is complete across all projects
       - Concept: interactive visual map of a project's
@@ -597,3 +682,14 @@
           [ SAVE ] writes to electron-store key: 'pushbullet.apiKey'
           After save: show "CONFIGURED ✓" in var(--accent2)
       - This unblocks // MESSAGES from the NO_API_KEY error state
+
+- [ ] Add delete button below reply button in email detail view
+      - Locate the reply button in the email detail panel component in `src/App.tsx`
+      - Add a `Delete` button rendered immediately after the reply button in the same button group or action column
+      - Style with the Emberforge aesthetic: `border: 1px solid #ff4444`, `color: #ff4444`, background transparent, `font-family: 'Share Tech Mono'`, hover state fills background with `#ff4444` at low opacity
+      - Add `onClick` handler that calls a `handleDeleteEmail(email.id)` function
+      - Implement `handleDeleteEmail` in component state logic: filter the email out of the inbox emails array in React state
+      - If the deleted email is currently selected/open, clear the selected email state to return to inbox list view
+      - Add a confirmation step via a small inline prompt or `window.confirm()` before deleting to prevent accidental loss
+      - Ensure the deleted email disappears from the sidebar/inbox list immediately on confirm (optimistic UI update)
+      - If Supabase email storage is wired up (per V1 roadmap), also fire a delete or soft-delete call to the relevant Supabase table after removing from local state
