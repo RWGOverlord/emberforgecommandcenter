@@ -14,15 +14,18 @@
   "dependencies": {
     "@whiskeysockets/baileys": "^7.0.0-rc13",
     "chokidar": "^5.0.0",
+    "dagre": "^0.8.5",
     "electron-store": "^8.2.0",
     "googleapis": "^172.0.0",
     "marked": "^18.0.4",
     "qrcode": "^1.5.4",
     "react": "^19.2.6",
-    "react-dom": "^19.2.6"
+    "react-dom": "^19.2.6",
+    "react-zoom-pan-pinch": "^4.0.3"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@types/dagre": "^0.7.54",
     "@types/node": "^24.12.3",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",

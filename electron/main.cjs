@@ -1129,6 +1129,192 @@ app.whenReady().then(() => {
     }
   });
 
+  // ─── Architecture Map IPC ────────────────────────────────────────────────
+
+  const ARCHMAP_CACHE = new Map();
+  const SKIP_DIRS     = new Set(['node_modules', '.git', '.next', 'dist', 'out', '.turbo', 'coverage', '.cache', 'public', 'styles']);
+  const INCLUDE_EXTS  = new Set(['.ts', '.tsx', '.js', '.jsx', '.cjs', '.mjs']);
+  const EXTERNAL_PKGS = [/^@supabase\//, /^next\//, /^react$/, /^react-dom/, /^stripe/, /^resend/, /^@anthropic-sdk\//];
+
+  function getLayer(filePath, repoPath) {
+    const rel = filePath.replace(repoPath, '').replace(/^[/\\]/, '').replace(/\\/g, '/');
+    // handle both app/ at root and src/app/ structure
+    if (/(?:^|src\/)app\/.+\/page\.[tj]sx?$/.test(rel))   return 'page';
+    if (/(?:^|src\/)app\/(?:.+\/)?layout\.[tj]sx?$/.test(rel)) return 'page';
+    if (/(?:^|src\/)app\/api\//.test(rel))                return 'api';
+    if (/(?:^|src\/)middleware\.[tj]sx?$/.test(rel))       return 'api';
+    if (/(?:^|src\/)components?\//.test(rel))              return 'component';
+    if (/(?:^|src\/)(lib|utils?|hooks?|types?)\//.test(rel)) return 'util';
+    return 'other';
+  }
+
+  function extractJSDoc(content) {
+    let overview = '';
+    let label    = '';
+    const depends = [];
+    const blockRe = /\/\*\*([\s\S]*?)\*\//g;
+    let m;
+    while ((m = blockRe.exec(content)) !== null) {
+      const block = m[1];
+      const ovMatch = block.match(/@fileoverview\s+([\s\S]*?)(?=@\w|\*\/|$)/);
+      if (ovMatch) {
+        overview = ovMatch[1].split('\n')
+          .map(l => l.replace(/^\s*\*\s?/, '').trim()).filter(Boolean).join(' ').trim();
+      }
+      const lblMatch = block.match(/@label\s+(.+?)(?=\s*(?:\*\/|@\w|$))/m);
+      if (lblMatch) label = lblMatch[1].replace(/^\s*\*\s?/, '').trim();
+      const depRe = /@depends\s+(\S+)/g;
+      let d;
+      while ((d = depRe.exec(block)) !== null) depends.push(d[1]);
+    }
+    return { overview, depends, label };
+  }
+
+  function resolveAliases(repoPath) {
+    const aliases = {};
+    const candidates = ['tsconfig.json', 'tsconfig.app.json', 'jsconfig.json'];
+    for (const name of candidates) {
+      const tscPath = path.join(repoPath, name);
+      if (!fs.existsSync(tscPath)) continue;
+      try {
+        const raw = fs.readFileSync(tscPath, 'utf-8');
+        // Strip // comments only when not inside a quoted string, leave /* */ alone
+        // (block-comment stripping trips on paths like "@/*" and "**/*.ts")
+        const stripped = raw.replace(/("(?:[^"\\]|\\.)*")|\/\/[^\n]*/g, (m, str) => str ?? '');
+        const tsconfig = JSON.parse(stripped);
+        const opts = tsconfig.compilerOptions ?? {};
+        const baseUrl = opts.baseUrl ? path.resolve(repoPath, opts.baseUrl) : repoPath;
+        if (opts.paths) {
+          for (const [alias, targets] of Object.entries(opts.paths)) {
+            const target = Array.isArray(targets) ? targets[0] : null;
+            if (!target) continue;
+            // "@/*" → prefix "@/", base = resolve(baseUrl, "src")
+            const prefix  = alias.endsWith('/*') ? alias.slice(0, -2) + '/' : alias;
+            const baseRel = target.endsWith('/*') ? target.slice(0, -2) : target;
+            aliases[prefix] = path.resolve(baseUrl, baseRel);
+          }
+        }
+        break;
+      } catch { /* ignore */ }
+    }
+    // Common-convention fallback: @/ and ~/ → src/ if src dir exists
+    if (!('@/' in aliases)) {
+      const src = path.join(repoPath, 'src');
+      if (fs.existsSync(src)) { aliases['@/'] = src; aliases['~/'] = src; }
+    }
+    return aliases;
+  }
+
+  function resolveWithExts(base) {
+    if (path.extname(base)) return fs.existsSync(base) ? base : null;
+    for (const ext of ['.ts', '.tsx', '.js', '.jsx']) {
+      if (fs.existsSync(base + ext)) return base + ext;
+      const idx = path.join(base, 'index' + ext);
+      if (fs.existsSync(idx)) return idx;
+    }
+    return null;
+  }
+
+  function extractImports(content, filePath, repoPath, aliases) {
+    const internal = new Set();
+    const external = new Set();
+    const dir = path.dirname(filePath);
+    const patterns = [
+      /import\s+(?:type\s+)?(?:[\w*{}[\]\s,]+from\s+)?['"]([^'"]+)['"]/g,
+      /require\(['"]([^'"]+)['"]\)/g,
+    ];
+    for (const re of patterns) {
+      let match;
+      while ((match = re.exec(content)) !== null) {
+        const imp = match[1];
+        if (imp.startsWith('.')) {
+          // relative import
+          const resolved = resolveWithExts(path.resolve(dir, imp));
+          if (resolved && resolved.startsWith(repoPath)) internal.add(resolved);
+        } else {
+          // try path aliases first
+          let aliasMatched = false;
+          for (const [prefix, basePath] of Object.entries(aliases)) {
+            if (!imp.startsWith(prefix)) continue;
+            const rest     = imp.slice(prefix.length);
+            const resolved = resolveWithExts(path.join(basePath, rest));
+            if (resolved && resolved.startsWith(repoPath)) internal.add(resolved);
+            aliasMatched = true;
+            break;
+          }
+          // then check known external packages
+          if (!aliasMatched && EXTERNAL_PKGS.some(p => p.test(imp))) {
+            const pkg = imp.startsWith('@') ? imp.split('/').slice(0, 2).join('/') : imp.split('/')[0];
+            external.add(pkg);
+          }
+        }
+      }
+    }
+    return { internal: [...internal], external: [...external] };
+  }
+
+  function walkDir(dir, files = []) {
+    let entries;
+    try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return files; }
+    for (const entry of entries) {
+      if (SKIP_DIRS.has(entry.name)) continue;
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) walkDir(full, files);
+      else if (entry.isFile() && INCLUDE_EXTS.has(path.extname(entry.name))) files.push(full);
+    }
+    return files;
+  }
+
+  function scanRepo(repoPath) {
+    const aliases = resolveAliases(repoPath);
+    const files   = walkDir(repoPath);
+    const nodes   = [];
+    const edges   = [];
+    for (const filePath of files) {
+      let content;
+      try { content = fs.readFileSync(filePath, 'utf-8'); } catch { continue; }
+      const { overview, depends, label } = extractJSDoc(content);
+      const { internal, external }      = extractImports(content, filePath, repoPath, aliases);
+      nodes.push({
+        id:       filePath,
+        label:    label || path.basename(filePath),
+        path:     filePath.replace(repoPath, '').replace(/^[/\\]/, '').replace(/\\/g, '/'),
+        layer:    getLayer(filePath, repoPath),
+        overview,
+        depends,
+        externals: external,
+      });
+      for (const target of internal) edges.push({ source: filePath, target });
+    }
+    return {
+      nodes,
+      edges,
+      meta: { projectName: path.basename(repoPath), repoPath, scannedAt: Date.now(), totalFiles: nodes.length, totalEdges: edges.length },
+    };
+  }
+
+  ipcMain.handle('archmap:scan', (_e, { repoPath }) => {
+    try {
+      if (ARCHMAP_CACHE.has(repoPath)) return ARCHMAP_CACHE.get(repoPath);
+      const result = scanRepo(repoPath);
+      ARCHMAP_CACHE.set(repoPath, result);
+      return result;
+    } catch (err) {
+      return { error: err.message };
+    }
+  });
+
+  ipcMain.handle('archmap:rescan', (_e, { repoPath }) => {
+    try {
+      ARCHMAP_CACHE.delete(repoPath);
+      const result = scanRepo(repoPath);
+      ARCHMAP_CACHE.set(repoPath, result);
+      return result;
+    } catch (err) {
+      return { error: err.message };
+    }
+  });
+
   // ─── Vault file watcher ──────────────────────────────────────────────────
   let debounceTimer = null;
   function startWatcher() {

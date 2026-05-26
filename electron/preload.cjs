@@ -91,4 +91,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     offThreadsUpdated:(cb)        => ipcRenderer.removeAllListeners('messages:threadsUpdated'),
     offThreadUpdated: (cb)        => ipcRenderer.removeAllListeners('messages:threadUpdated'),
   },
+
+  archmapAPI: {
+    scan:   (repoPath) => ipcRenderer.invoke('archmap:scan',   { repoPath }),
+    rescan: (repoPath) => ipcRenderer.invoke('archmap:rescan', { repoPath }),
+  },
 });

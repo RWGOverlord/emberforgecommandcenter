@@ -1,687 +1,629 @@
 # EMBERFORGE COMMAND CENTER — TASKS
 
 ## In Progress
-- [ ] Refactor — split App.tsx into component files
-      - IMPORTANT: this is a refactor only
-        Zero functional changes — UI must look and
-        behave identically before and after
-        Do not add features during this refactor
+- [ ] Refactor — reorganize src/ into proper folder
+      structure for arch map layer detection
+      IMPORTANT: this is a structural refactor only
+      Zero functional changes — UI must look and
+      behave identically before and after
+      Do not add or change any features
+      Build must pass clean after every file move
 
-      - Create src/components/ folder structure:
-          src/components/
-            Sidebar.tsx
-            StatusBar.tsx
-            NodePanel.tsx
-            projects/
-              ProjectList.tsx
-              ProjectDetail.tsx
-              ProjectOverview.tsx
-              ProjectArchMap.tsx    ← stub, empty for now
-              ProjectAgent.tsx
-              ProjectLogs.tsx
-              StatCard.tsx
-            vault/
-              VaultSidebar.tsx
-              VaultFileList.tsx
-              VaultEditor.tsx
+      CURRENT FLAT STRUCTURE (src/):
+        App.tsx
+        App.css
+        BootScreen.tsx
+        helpers.ts
+        ImageModal.tsx
+        index.css
+        main.tsx
+        MailPanel.tsx
+        MessagesPanel.tsx
+        MiddlePanel.tsx
+        NodePanel.tsx
+        ProjectArchMap.tsx
+        ProjectPanel.tsx
+        Shared.tsx
+        Sidebar.tsx
+        StatusBar.tsx
+        SystemPanel.tsx
+        types.ts
+        VaultPanel.tsx
+
+      TARGET STRUCTURE:
+        src/
+          App.tsx              ← stays at root
+          App.css              ← stays at root
+          index.css            ← stays at root
+          main.tsx             ← stays at root
+          types.ts             ← stays at root
+
+          utils/
+            helpers.ts         ← moved from src/
+
+          components/
+            BootScreen.tsx     ← moved
+            ImageModal.tsx     ← moved
+            Shared.tsx         ← moved
+            Sidebar.tsx        ← moved
+            StatusBar.tsx      ← moved
+            MiddlePanel.tsx    ← moved
+
+            node/
+              NodePanel.tsx    ← moved
+
             mail/
-              MailList.tsx
-              MailDetail.tsx
-              MailCompose.tsx
+              MailPanel.tsx    ← moved
+
             comms/
-              CommsList.tsx
-              CommsThread.tsx
+              MessagesPanel.tsx ← moved
+
+            vault/
+              VaultPanel.tsx   ← moved
+
+            projects/
+              ProjectPanel.tsx  ← moved
+              ProjectArchMap.tsx ← moved
+
             system/
-              SystemDisplay.tsx
-              SystemConnections.tsx
-              SystemQuickLaunch.tsx
-              SystemVaultPath.tsx
-              SystemAbout.tsx
-            shared/
-              ImageModal.tsx
-              EmptyState.tsx
+              SystemPanel.tsx  ← moved
 
-      - Move each component out of App.tsx into
-        its own file
-        Props and state interfaces move with the component
-        Local state stays local where possible
-        Shared state (activeSection, selectedProject, etc.)
-        stays in App.tsx and passed as props
+      PROCESS — do in this exact order:
+        1. Create all target folders first
+        2. Move files one at a time
+        3. After each move:
+             Update all import paths that reference
+             the moved file — check every file in
+             the project that imports it
+             Run: npm run build
+             Fix any import errors before next move
+        4. Move order (safest first — least imported):
+             a. helpers.ts → utils/helpers.ts
+             b. BootScreen.tsx → components/BootScreen.tsx
+             c. ImageModal.tsx → components/ImageModal.tsx
+             d. Shared.tsx → components/Shared.tsx
+             e. StatusBar.tsx → components/StatusBar.tsx
+             f. MiddlePanel.tsx → components/MiddlePanel.tsx
+             g. Sidebar.tsx → components/Sidebar.tsx
+             h. NodePanel.tsx → components/node/NodePanel.tsx
+             i. MailPanel.tsx → components/mail/MailPanel.tsx
+             j. MessagesPanel.tsx → components/comms/MessagesPanel.tsx
+             k. VaultPanel.tsx → components/vault/VaultPanel.tsx
+             l. SystemPanel.tsx → components/system/SystemPanel.tsx
+             m. ProjectArchMap.tsx → components/projects/ProjectArchMap.tsx
+             n. ProjectPanel.tsx → components/projects/ProjectPanel.tsx
+        5. Final build check after all moves:
+             npm run build — must show 0 errors
+             0 warnings related to imports
+        6. Do not proceed to next file until
+           current file builds clean
 
-      - App.tsx after refactor should contain only:
-          - Global state (activeSection, selectedItem, etc.)
-          - Boot animation logic
-          - Root layout (sidebar + main content area)
-          - Conditional rendering based on activeSection
-          - Global useEffects (brightness, font size,
-            text contrast on mount)
-          - Nothing else
+      ARCH MAP LAYER DETECTION after refactor:
+        src/components/**          → component
+        src/components/node/**     → component
+        src/components/mail/**     → component
+        src/components/comms/**    → component
+        src/components/vault/**    → component
+        src/components/projects/** → component
+        src/components/system/**   → component
+        src/utils/**               → util
+        src/types.ts               → util
+        src/App.tsx                → component
+        electron/main.cjs          → api
+        electron/preload.cjs       → util
 
-      - After each component is extracted:
-          Verify app still compiles: npm run build
-          Fix any type errors before moving to next
-          component
-          Do one component at a time — do not extract
-          everything at once
+      VERIFY after refactor:
+        Open Command Center arch map
+        Click RESCAN
+        All nodes should now show correct layers:
+          No nodes labeled "OTHER" for known files
+          Panel files → COMPONENT (teal)
+          helpers.ts, types.ts → UTIL (muted)
+          electron/main.cjs → API (gold)
+          electron/preload.cjs → UTIL (muted)
+- [x] Arch Map — @label tag support for node display names
+      - Update archmap:scan IPC handler in main.cjs:
+          When extracting JSDoc tags from each file,
+          also extract @label tag if present:
+            /**
+             * @label Edit Client
+             */
+          Add to node object:
+            label: string  ← @label value if found,
+                             otherwise filename as before
+          Priority:
+            1. @label tag value
+            2. filename (current fallback)
 
-      - Order to extract (least risky first):
-          1. StatusBar
-          2. EmptyState (shared)
-          3. Sidebar
-          4. NodePanel
-          5. StatCard
-          6. ProjectLogs
-          7. ProjectAgent
-          8. ProjectOverview (overview tab)
-          9. ProjectDetail (wrapper)
-          10. ProjectList
-          11. VaultFileList
-          12. VaultEditor
-          13. MailList + MailDetail + MailCompose
-          14. CommsList + CommsThread
-          15. SystemDisplay + other system panels
-          16. ImageModal (shared)
-          17. ProjectArchMap stub (empty component,
-              returns placeholder div only)
+      - Update SVG node rendering in ProjectArchMap.tsx:
+          Already uses node.label for display text
+          No change needed here if scanner returns
+          correct label value
 
-      - Build must pass clean after every extraction
-        tsc + vite build, 0 errors, 0 warnings
-- [x] Architecture map — per project visual dependency graph
-      - PLANNED FEATURE — full spec to be written after
-        JSDoc commenting is complete across all projects
-      - Concept: interactive visual map of a project's
-        file structure and dependencies, rendered in the
-        right panel of // PROJECTS
-      - Each file is a node, imports/calls are edges
-        Color coded by layer:
-          Pages:      var(--accent)   cyan
-          Components: var(--accent2)  teal
-          API Routes: #ffc200         gold
-          Utils/Lib:  var(--dim)      muted
-          External:   #b44dff         purple
-      - Clicking a node shows file summary panel
-        populated from @fileoverview JSDoc block
-        and @depends tags
-      - Right panel with zoom, pan, horizontal +
-        vertical scroll
-      - Tech: D3.js for graph rendering, Node.js
-        import parser to build dependency JSON
-        from local repo files on disk
-      - DO NOT BUILD YET — placeholder only
-- [x] // NODE — personal reminders strip
-      - New full-width row above // QUICK LAUNCH
-        spanning both columns (grid-column: 1 / -1)
-        border-top: 1px solid var(--border)
-        border-bottom: 1px solid var(--border)
-        min-height: 80px, max-height: 140px
-        padding: 10px 20px
-        display: flex, flex-direction: column, gap: 6px
+      - Update node detail panel:
+          Show both label and filename:
+            Header: @label value (or filename if no label)
+            // PATH section: always shows actual filename
+              and full relative path unchanged
+- [x] Architecture Map — per project visual dependency graph
+      ═══════════════════════════════════════════════════════
+      MULTI-PART BUILD — work through parts sequentially
+      Do NOT start next part until explicitly instructed
+      Build target: ProjectArchMap.tsx (already exists as stub)
+      ═══════════════════════════════════════════════════════
 
-      REMINDERS FILE:
-      - Path: /Users/risingwarriorgames/Documents/
-          07_TechProjects/EmberforgeCommandCenter/
-          REMINDERS.md
-      - Read/write via existing project:readFile
-        and project:writeFile IPC handlers
-        repoPath: EmberforgeCommandCenter folder
-        filename: REMINDERS.md
-      - File format:
-          # REMINDERS
+      ── PART 1 — File Scanner (Electron main process) ──────
 
-          - [ ] Design ZO2 box art | due:2026-06-01
-          - [ ] Fix DoulaFlow intake bug | due:2026-05-26
-          - [x] Update TASKS.md | due:2026-05-20 | archived
-          - [ ] Call vendor about components | due:none
+      - [ ] Register IPC handler in electron/main.cjs:
+              ipcMain.handle('archmap:scan', async (_, { repoPath }) => { })
 
-        Rules:
-          Active:   - [ ] title | due:YYYY-MM-DD
-          Done:     - [x] title | due:YYYY-MM-DD | archived
-          No date:  - [ ] title | due:none
-      - Parse on mount, re-parse after every save
-      - Create file with empty # REMINDERS header
-        if it doesn't exist yet
+            SCANNER LOGIC:
+            - Walk the repoPath directory recursively
+            - Skip these directories entirely:
+                node_modules, .git, .next, dist,
+                out, .turbo, coverage, .cache,
+                public, styles (no JS/TS there)
+            - Include only these extensions:
+                .ts .tsx .js .jsx .cjs .mjs
+            - For each file:
 
-      HEADER ROW:
-      - Left: "// REMINDERS"
-          font-size 8px, color var(--dim), letter-spacing 3px
-      - Right: [ + ADD ] button
-          font-size 8px, letter-spacing 2px
-          border: 1px solid var(--border-md)
-          color: var(--dimmer), padding: 3px 8px
-          hover: border var(--accent), color var(--accent)
+                READ JSDOC TAGS:
+                Extract @fileoverview block if present:
+                  /** ... @fileoverview ... */
+                  Everything between @fileoverview and
+                  next @ tag or end of comment block
+                Extract all @depends tags:
+                  @depends supabase/clients
+                  @depends storage/documents
+                  etc. — return as string array
 
-      REMINDER LIST:
-      - Horizontal scrolling row of reminder items
-        display: flex, flex-direction: row, gap: 12px
-        overflow-x: auto, padding-bottom: 4px
-        scrollbar height 2px
-      - Sort order:
-          1. Overdue (past due date) — first, color #ff4444
-          2. Due today — second, color #ffc200
-          3. Upcoming — by due date ascending
-          4. No due date — after dated items
-          5. Archived — last, dimmed
+                READ IMPORTS:
+                Extract all import statements:
+                  import x from './path'
+                  import { x } from '../path'
+                  import type { x } from './path'
+                  require('./path')
+                Resolve relative paths to absolute
+                Only keep imports that resolve to
+                files within the repoPath
+                Ignore node_modules imports EXCEPT
+                capture these as external dependencies:
+                  @supabase/*, next/*, react,
+                  react-dom, stripe, resend,
+                  @anthropic-sdk/*
+                  Return external deps as separate array
 
-      EACH REMINDER CARD:
-        min-width: 180px, max-width: 220px
-        border: 1px solid var(--border-md)
-        background: var(--bg-panel)
-        padding: 8px 10px
-        flex-shrink: 0
-        position: relative
+                DETERMINE LAYER:
+                Map file path to layer:
+                  /app/**/page.tsx      → 'page'
+                  /app/**/layout.tsx    → 'page'
+                  /app/api/**           → 'api'
+                  /components/**        → 'component'
+                  /lib/** /utils/**     → 'util'
+                  /hooks/**             → 'util'
+                  /types/**             → 'util'
+                  /middleware.ts        → 'api'
+                  anything else         → 'other'
 
-        Top row:
-          Checkbox: custom styled
-            □ unchecked: border 1px solid var(--dim)
-            ✓ checked: border + color var(--accent2)
-            width/height: 10px, margin-right 6px
-          Title: font-size 9px, color var(--text)
-            letter-spacing 0.5px
-            max 2 lines, overflow hidden
-            checked/archived: color var(--dimmer)
-              text-decoration: line-through
+            - Build and return this JSON structure:
+                {
+                  nodes: [
+                    {
+                      id: string,          ← absolute path
+                      label: string,       ← filename only
+                      path: string,        ← relative to repoPath
+                      layer: string,       ← page|api|component|util|other
+                      overview: string,    ← @fileoverview text or ''
+                      depends: string[],   ← @depends tags
+                      externals: string[], ← external npm deps
+                    }
+                  ],
+                  edges: [
+                    {
+                      source: string,  ← absolute path of importer
+                      target: string,  ← absolute path of imported
+                    }
+                  ],
+                  meta: {
+                    projectName: string,
+                    repoPath: string,
+                    scannedAt: number,   ← epoch ms
+                    totalFiles: number,
+                    totalEdges: number,
+                  }
+                }
 
-        Due date row:
-          font-size 8px, letter-spacing 1px
-          Overdue:  color #ff4444  "⚠ DUE MAY 20"
-          Today:    color #ffc200  "⚠ DUE TODAY"
-          Upcoming: color var(--dim) "DUE JUN 1"
-          No date:  color var(--dimmer) "NO DUE DATE"
-          Archived: color var(--dimmer) "ARCHIVED"
+            - Cache result in memory:
+                Map<repoPath, scanResult>
+                Invalidate cache when archmap:rescan called
 
-        [ × ] remove button top-right corner:
-          position: absolute, top: 4px, right: 6px
-          font-size 8px, color var(--dimmer)
-          hover: color #ff4444
-          On click: remove from REMINDERS.md entirely
-          No confirmation (file is recoverable manually)
-
-        Click on card (not checkbox, not ×):
-          Opens inline edit mode for that card
-          (see ADD/EDIT FORM below)
-
-        Click checkbox:
-          Toggle [ ] ↔ [x] + archived tag
-          Write back to REMINDERS.md immediately
-
-      ADD/EDIT FORM:
-      - Opens as an overlay card in the reminders strip
-        or inline replacing the clicked card
-        same card dimensions, slightly taller
-        border-color: var(--accent)
-
-        Title input:
-          font: Share Tech Mono, 10px
-          color: var(--text), background: transparent
-          border: none, border-bottom: 1px solid var(--border-md)
-          width: 100%, padding: 2px 0
-          placeholder: "reminder title..."
-          auto-focus on open
-
-        Due date input:
-          type="date"
-          font: Share Tech Mono, 9px
-          color: var(--dim), background: var(--bg)
-          border: 1px solid var(--border-md)
-          padding: 3px 6px, margin-top: 6px
-          width: 100%
-          accent-color: var(--accent)
-          Optional — can be left empty (saves as due:none)
-
-        Button row:
-          [ SAVE ]  [ CANCEL ]
-          font-size 8px, padding: 3px 8px
-          [ SAVE ]: border/color var(--accent)
-          [ CANCEL ]: border/color var(--dimmer)
-
-        SAVE behavior:
-          Append new line to REMINDERS.md
-            or update existing line in place
-          Re-parse and re-render reminder list
-          Close form
-
-      EMPTY STATE:
-        If no reminders yet:
-          "// NO REMINDERS — [ + ADD ]"
-          font-size 9px, color var(--dimmer)
-          letter-spacing 2px, centered vertically
-          [ + ADD ] inline clickable, color var(--accent)
-
-- [x] Image modal — shared component
-
-      - Create src/components/ImageModal.tsx
-        Used by both // MAIL and // COMMS
-      - Props:
-          src: string
-          onClose: () => void
-      - Full screen overlay:
-          position: fixed, inset: 0, zIndex: 100
-          background: rgba(2, 8, 16, 0.95)
-          display: flex, align-items center,
-          justify-content center
-          onClick on overlay: calls onClose
-      - Image:
-          max-width: 90vw, max-height: 90vh
-          object-fit: contain
-          border: 1px solid var(--border-md)
-          onClick: stopPropagation (don't close on img click)
-      - Close button top-right:
-          "[ CLOSE ]" font-size 9px, letter-spacing 2px
-          color var(--dim), position absolute
-          top: 20px, right: 20px
-          hover: color var(--accent)
-      - Escape key also closes modal
-      - Animate in: fade + slight scale up
-          opacity 0 scale(0.95) →
-          opacity 1 scale(1), duration 150ms
-      - Replace current stub placeholder with
-        functional settings view
-      - Layout:
-          Header: "// VAULT PATH"
-            Rajdhani 700, accent color, letter-spacing 1px
-            border-bottom: 1px solid var(--border)
-            padding: 14px 20px
-
-          Current path field:
-            Label: "// CURRENT PATH"
-              font-size 8px, color var(--dim),
-              letter-spacing 3px, margin-bottom 6px
-            Text input pre-filled with current vault path
-              read from electron-store 'vaultPath'
-            Full width, same input style as rest of app
-            hint below: "absolute path to your vault folder"
-              font-size 8px, color var(--dimmer)
-
-          OR:
-            [ CHOOSE FOLDER ] button below input
-              opens native folder picker dialog
-              same as vault:choosePath IPC handler
-              auto-fills the input on selection
-
-          Buttons row right-aligned:
-            [ SAVE ]  [ CANCEL ]
-            [ SAVE ]: writes to electron-store 'vaultPath'
-              triggers vault sidebar to reload tree
-              show "// SAVED ✓" briefly in accent2
-              then return to normal display
-            [ CANCEL ]: discard changes
-
-          padding: 20px
-
-- [x] // SYSTEM → QUICK LAUNCH — manage pinned apps
-      - Replace current stub placeholder with
-        functional settings view
-      - Layout:
-          Header: "// QUICK LAUNCH"
-            Rajdhani 700, accent color, letter-spacing 1px
-            border-bottom: 1px solid var(--border)
-            padding: 14px 20px
-
-          App list — current pinned apps:
-            Read from electron-store 'quickLaunch'
-            Default if not set:
-              [
-                { label: 'VS CODE', path: '/Applications/Visual Studio Code.app' },
-                { label: 'BRAVE',   path: '/Applications/Brave Browser.app' }
-              ]
-            Max 6 entries — [ + ADD APP ] hidden when 6 reached
-
-          Each app row:
-            display: flex, align-items center, gap 10px
-            padding: 10px 0
-            border-bottom: 1px solid var(--border)
-
-            Label input:
-              width: 100px, flex-shrink 0
-              font: Share Tech Mono, same input style
-              placeholder: "LABEL"
-              all caps enforced: toUpperCase() on change
-
-            Path input:
-              flex: 1
-              font: Share Tech Mono, same input style
-              placeholder: "/Applications/App.app"
-
-            [ REMOVE ] button:
-              font-size 8px, letter-spacing 1px
-              color: #ff444466
-              border: 1px solid #ff444422
-              padding: 3px 8px
-              hover: color #ff4444, border-color #ff4444
-              On click: remove row immediately
-              No confirmation needed (not destructive
-              since nothing on disk is touched)
-
-          [ + ADD APP ] button below list:
-            width: 100%, padding: 8px
-            border: 1px solid var(--border-md)
-            color: var(--dimmer), background: transparent
-            hover: border var(--accent), color var(--accent)
-            Adds new empty row to list
-            Disabled + greyed when 6 apps reached
-            Show "// MAX 6 APPS" note when at limit
-              font-size 8px, color var(--dimmer)
-
-          Buttons row right-aligned:
-            [ SAVE ]  [ CANCEL ]
-            [ SAVE ]:
-              Validates all rows have both label and path
-              If invalid: "// ALL FIELDS REQUIRED"
-                in #ff4444 below list
-              On valid: writes array to electron-store
-                key: 'quickLaunch'
-              Updates // NODE Quick Launch buttons
-                immediately without restart
-              Show "// SAVED ✓" briefly in accent2
-            [ CANCEL ]: discard all changes,
-              restore original values
-
-          padding: 20px
-
-      - // NODE Quick Launch zone:
-          Read from electron-store 'quickLaunch'
-          on mount instead of hardcoded VS CODE / BRAVE
-          Re-reads when settings are saved so it
-          updates live without needing app restart
-
-      - New IPC handler:
-          ipcMain.handle('supabase:getStatus', async (_, { projectUrl, anonKey }) => {
-            Health check:
-              GET {projectUrl}/rest/v1/
-              Headers: {
-                apikey: anonKey,
-                Authorization: `Bearer ${anonKey}`
-              }
-            Returns:
-              { healthy: boolean }
+          ipcMain.handle('archmap:rescan', async (_, { repoPath }) => {
+            // clear cache for this repoPath, re-run scan
           })
-      - Stat card display:
-          Top: connection status
-            Healthy:    "CONNECTED ✓"  color var(--accent2)
-            Unhealthy:  "DEGRADED"     color #ffc200
-            Unreachable: "OFFLINE ✗"  color #ff4444
-          Middle: project URL truncated
-            font-size 8px, color var(--dimmer)
-          Bottom: "// last checked HH:MM:SS"
-            font-size 8px, color var(--dimmer)
-      - Note: deeper table stats (row counts etc.)
-        are project-specific and deferred to V2
-        since table names differ per project
-      - Refresh every 120 seconds
-- [x] // MAIL — inline image rendering in email body
-      - Currently strips HTML and shows plain text only
-        Need to handle emails that contain images
 
-      - Update gmail:getThread IPC handler in main.cjs:
-          When extracting message body:
-            Check message parts for multipart/related
-            or multipart/mixed content types
-            Extract inline images (Content-ID attachments):
-              parts where mimeType starts with 'image/'
-              get the attachment data:
-                gmail.users.messages.attachments.get({
-                  userId: 'me',
-                  messageId: messageId,
-                  id: part.body.attachmentId
+      - [ ] Add to preload.cjs bridge:
+              archmapAPI: {
+                scan:    (repoPath) => ipcRenderer.invoke('archmap:scan', { repoPath }),
+                rescan:  (repoPath) => ipcRenderer.invoke('archmap:rescan', { repoPath }),
+              }
+
+      - [ ] Test scanner against DoulaFlow repo:
+              Call archmap:scan with DoulaFlow repoPath
+              Log result to console
+              Verify:
+                nodes array has expected files
+                edges connect correctly
+                @fileoverview text extracted correctly
+                @depends tags parsed correctly
+              Fix any parsing issues before marking done
+              DO NOT proceed to Part 2 until scan output
+              looks correct on a real project
+
+      ── PART 2 — Graph Layout Engine ───────────────────────
+
+      - [ ] Install layout dependency:
+              npm install dagre
+              dagre is a directed graph layout library
+              handles node positioning automatically
+              no need to hand-calculate coordinates
+
+      - [ ] Create src/utils/graphLayout.ts:
+
+            import dagre from 'dagre'
+
+            LAYER CONFIG:
+            const LAYER_COLORS = {
+              page:      '#00d4ff',   ← accent (cyan)
+              api:       '#ffc200',   ← gold
+              component: '#00ffcc',   ← accent2 (teal)
+              util:      '#00d4ff44', ← muted cyan
+              other:     '#00d4ff22', ← very muted
+            }
+
+            const NODE_WIDTH  = 160
+            const NODE_HEIGHT = 36
+            const RANK_SEP    = 120  ← horizontal space between layers
+            const NODE_SEP    = 20   ← vertical space between nodes
+
+            LAYOUT FUNCTION:
+            export function computeLayout(scanResult: ScanResult): LayoutResult {
+              const g = new dagre.graphlib.Graph()
+              g.setGraph({
+                rankdir: 'LR',        ← left to right
+                ranksep: RANK_SEP,
+                nodesep: NODE_SEP,
+                marginx: 40,
+                marginy: 40,
+              })
+              g.setDefaultEdgeLabel(() => ({}))
+
+              // Add nodes
+              scanResult.nodes.forEach(node => {
+                g.setNode(node.id, {
+                  width: NODE_WIDTH,
+                  height: NODE_HEIGHT,
+                  ...node,
                 })
-              Convert to base64 data URL:
-                `data:${mimeType};base64,${data}`
-              Map Content-ID to data URL:
-                { [contentId]: dataUrl }
-            Replace cid: references in HTML body:
-              html.replace(/src="cid:([^"]+)"/g,
-                (_, cid) => `src="${cidMap[cid] ?? ''}"`)
+              })
 
-      - Update email body rendering in right panel:
-          Switch from plain text to sanitized HTML
-          rendering when email has HTML content
-          Use DOMParser to sanitize:
-            strip <script>, <style>, on* attributes
-            keep <img>, <a>, <p>, <br>, <table> etc.
-          Render via dangerouslySetInnerHTML on a
-          div with class 'email-body'
-          Scoped styles for .email-body:
-            img:
-              max-width: 100%
-              height: auto
-              border: 1px solid var(--border-md)
-              margin: 8px 0
-            a:
-              color: var(--accent)
-              text-decoration: none
-              border-bottom: 1px solid var(--accent)44
-            p, div:
-              color: var(--text)
-              font-family: var(--font-mono)
-              font-size: 12px
-              line-height: 1.8
-            table:
-              max-width: 100%
-              border-collapse: collapse
+              // Add edges
+              scanResult.edges.forEach(edge => {
+                // only add edge if both nodes exist
+                if (g.hasNode(edge.source) && g.hasNode(edge.target)) {
+                  g.setEdge(edge.source, edge.target)
+                }
+              })
 
-- [x] Image modal — shared component
+              dagre.layout(g)
 
-      - Create src/components/ImageModal.tsx
-        Used by both // MAIL and // COMMS
-      - Props:
-          src: string
-          onClose: () => void
-      - Full screen overlay:
-          position: fixed, inset: 0, zIndex: 100
-          background: rgba(2, 8, 16, 0.95)
-          display: flex, align-items center,
-          justify-content center
-          onClick on overlay: calls onClose
-      - Image:
-          max-width: 90vw, max-height: 90vh
-          object-fit: contain
-          border: 1px solid var(--border-md)
-          onClick: stopPropagation (don't close on img click)
-      - Close button top-right:
-          "[ CLOSE ]" font-size 9px, letter-spacing 2px
-          color var(--dim), position absolute
-          top: 20px, right: 20px
-          hover: color var(--accent)
-      - Escape key also closes modal
-      - Animate in: fade + slight scale up
-          opacity 0 scale(0.95) →
-          opacity 1 scale(1), duration 150ms
+              // Extract positioned nodes
+              const layoutNodes = scanResult.nodes.map(node => {
+                const { x, y } = g.node(node.id)
+                return {
+                  ...node,
+                  x, y,
+                  width: NODE_WIDTH,
+                  height: NODE_HEIGHT,
+                  color: LAYER_COLORS[node.layer] ?? LAYER_COLORS.other,
+                }
+              })
 
-- [x] // PROJECTS — add and manage projects
-      - Add [ + NEW PROJECT ] button at the bottom
-        of the middle panel project list
-        Style:
-          width: calc(100% - 32px), margin: 12px 16px
-          padding: 8px, font-size 9px, letter-spacing 2px
-          border: 1px solid var(--border-md)
-          color: var(--dimmer), background: transparent
-          hover: border var(--accent), color var(--accent)
-          transition: all 0.15s ease
+              // Extract edges with path points
+              const layoutEdges = scanResult.edges
+                .filter(e => g.hasNode(e.source) && g.hasNode(e.target))
+                .map(edge => ({
+                  ...edge,
+                  points: g.edge(edge.source, edge.target)?.points ?? [],
+                }))
 
-      - Clicking [ + NEW PROJECT ] opens a form in the
-        right panel replacing the empty state:
-          Header: "// NEW PROJECT"
-            Rajdhani 700, accent color, letter-spacing 1px
-            border-bottom: 1px solid var(--border)
-            padding: 14px 20px
+              // Calculate total canvas size
+              const maxX = Math.max(...layoutNodes.map(n => n.x + NODE_WIDTH))
+              const maxY = Math.max(...layoutNodes.map(n => n.y + NODE_HEIGHT))
 
-          FORM FIELDS (each field same input style as
-          SYSTEM → DISPLAY settings inputs):
-            Label:        text input  — e.g. "DoulaFlow"
-            Repo Path:    text input  — full local path
-                          hint: "/Users/risingwarriorgames/
-                                 Documents/07_TechProjects/..."
-            Context File: text input  — e.g. "CLAUDE.md"
-                          hint: "name of AI context file
-                                 at repo root"
-            Tasks File:   text input  — default "TASKS.md"
-            Bugs File:    text input  — default "BUGS.md"
-            Vercel ID:    text input  — optional
-            Status:       single select toggle:
-                          [ LIVE ] [ LOCAL ] [ REPO ] [ PLANNED ]
-                          same mode button style as text contrast
+              return {
+                nodes: layoutNodes,
+                edges: layoutEdges,
+                width: maxX + 80,
+                height: maxY + 80,
+              }
+            }
 
-          Buttons row right-aligned:
-            [ CREATE PROJECT ]  [ CANCEL ]
-            [ CREATE PROJECT ]: border/color var(--accent)
-            [ CANCEL ]: border/color var(--dimmer)
+            TYPES (add to src/types.ts):
+              ScanResult — matches archmap:scan return shape
+              LayoutNode — ScanResult node + x, y, width,
+                           height, color
+              LayoutEdge — edge + points: {x,y}[]
+              LayoutResult — { nodes, edges, width, height }
 
-      - CREATE PROJECT behavior:
-          Validate: Label and Repo Path are required
-          If missing: show "// LABEL AND REPO PATH REQUIRED"
-            in #ff4444 below the form fields
-          On valid submit:
-            Read existing projects from electron-store
-              key: 'projects'
-              (migrate from projects.json import to
-               electron-store if not already done)
-            Generate id from label:
-              label.toLowerCase().replace(/\s+/g, '-')
-            Append new project object to array
-            Write back to electron-store
-            Close form, select new project in list,
-            show its detail panel
+      ── PART 3 — SVG Rendering (ProjectArchMap.tsx) ────────
 
-      - Project list reads from electron-store 'projects'
-        key on mount and whenever a project is added
-        Falls back to projects.json defaults if store
-        is empty (first launch migration)
+      - [ ] Build the main architecture map component
+            File: src/ProjectArchMap.tsx (replace stub)
 
-      - Also add [ REMOVE ] to existing project detail
-        panel header — far right, small, destructive:
-          font-size 8px, color #ff444466
-          border: 1px solid #ff444433
-          padding: 3px 8px, letter-spacing 2px
-          hover: color #ff4444, border-color #ff4444
-        On click: show inline confirmation in header:
-          "// REMOVE PROJECT?  [ CONFIRM ]  [ ABORT ]"
-          [ CONFIRM ] removes from electron-store array,
-            navigates back to empty state
-          [ ABORT ] dismisses confirmation
-        Note: only removes from Command Center —
-          never touches files on disk
+            COMPONENT STRUCTURE:
+            - useEffect on mount: call archmapAPI.scan(repoPath)
+              store raw scan result in useState
+              run computeLayout() on scan result
+              store layout result in useState
 
-      - Follows standard three-column layout:
-          Sidebar + Middle (thread list) + Right (email view)
-      - NOT full-width like // NODE
+            STATES:
+              idle:     project has no repoPath configured
+              scanning: scan in progress
+              error:    scan failed
+              ready:    layout computed, render graph
 
-      AUTH REQUIRED STATE:
-      - When status is AUTH_REQUIRED:
-        Middle and right panels show centered state:
-          ✉ icon, font-size 28px, color var(--dimmer)
-          "// GMAIL — NOT CONNECTED"
-          font-size 9px, color var(--dim), letter-spacing 4px
-          margin-top 12px
-          [ CONNECT GMAIL ] button below:
-            padding: 8px 20px
-            border: 1px solid var(--accent)
-            color: var(--accent)
-            font-size 9px, letter-spacing 2px
-            hover: background var(--bg-hover)
-          On click: calls gmailAPI.authorize()
-          After auth: reloads thread list automatically
+            IDLE STATE:
+              "// NO REPO PATH CONFIGURED"
+              "Set repo path in project settings"
+              centered, same empty state pattern
 
-      MIDDLE PANEL — thread list:
-      - Panel header: "// MAIL"
-        accent color + blinking cursor
-      - Search bar at top:
-          Same style as // COMMS search bar
-          placeholder: "// SEARCH..."
-          Filters client-side by subject or sender
-      - Loading state: "// LOADING MAIL..." with blink cursor
-      - Each thread row:
-          padding: 10px 14px
-          border-bottom: 1px solid var(--border)
-          cursor: pointer
-          selected: left border var(--accent), bg var(--bg-hover)
-          hover: bg var(--bg-hover)
-          animation: fade-up staggered
+            SCANNING STATE:
+              "// SCANNING [PROJECT NAME]..."
+              animated blink cursor
+              "reading files and mapping dependencies"
+              font-size 9px, color var(--dim)
 
-          ROW LAYOUT:
-          Top row: sender name (left) + timestamp (right)
-            Sender:
-              font: Rajdhani 600, font-size 11px
-              color: var(--text)
-              unread: color var(--accent), font-weight 700
-            Timestamp:
-              font-size 8px, color var(--dimmer)
-              relative time format
-          Second row: subject line
-            font-size 10px, color var(--dim)
-            unread: color var(--text)
-            truncate with ellipsis
-          Third row: snippet
-            font-size 9px, color var(--dimmer)
-            truncate with ellipsis
+            ERROR STATE:
+              "// SCAN FAILED"
+              error message below in #ff4444
+              [ RETRY ] button
 
-          Unread dot: same as // COMMS
-            5px circle, color var(--accent)
-            left of sender name, unread only
+            READY STATE — full SVG canvas:
 
-      - Load more: [ LOAD MORE ] button at bottom of list
-        Calls getThreads with nextPageToken
+              TOOLBAR (above canvas):
+                border-bottom: 1px solid var(--border)
+                padding: 8px 16px
+                display: flex, gap 12px, align-items center
 
-      RIGHT PANEL — email view:
-      - Empty state:
-          Centered ✉ + "// SELECT AN EMAIL"
-          same pattern as other empty states
+                Left side:
+                  "// ARCH MAP" label
+                  Scan meta: "[N] FILES · [N] EDGES · 
+                    scanned [relative time]"
+                  font-size 8px, color var(--dimmer)
 
-      - Email header section:
-          border-bottom: 1px solid var(--border)
-          padding: 16px 20px
-          Subject: Rajdhani 700, font-size 14px,
-            color var(--accent2), letter-spacing 0.5px
-          From row: "FROM  name@email.com"
-            label: font-size 8px, color var(--dimmer),
-                   letter-spacing 3px, margin-right 8px
-            value: font-size 10px, color var(--dim)
-          Date row: same label/value pattern
-          [ REPLY ] button top-right of header:
-            padding: 5px 14px, font-size 9px
-            border: 1px solid var(--accent)
-            color: var(--accent), letter-spacing 2px
-            hover: background var(--bg-hover)
+                Right side:
+                  [ RESCAN ] button
+                  [ − ] [ + ] zoom buttons
+                  [ ⊡ ] reset zoom/pan button
+                  Search input:
+                    placeholder: "// SEARCH FILES..."
+                    font-size 9px, width 160px
+                    filters/highlights matching nodes
 
-      - Email body:
-          flex: 1, overflow-y auto, padding: 20px
-          font: Share Tech Mono, 12px
-          color: var(--text), line-height 1.8
-          Plain text rendering — no HTML
-          If HTML email: strip all tags, show plain text only
+                Layer legend (right of toolbar):
+                  Small colored dot + label for each layer
+                  ● PAGES  ● API ROUTES  ● COMPONENTS
+                  ● UTILS  ● EXTERNAL
+                  font-size 8px, gap 12px
 
-      - Reply composer (hidden until [ REPLY ] clicked):
-          Slides in from bottom, pushes email body up
-          border-top: 1px solid var(--border-md)
-          padding: 14px 20px
-          "// REPLY" label: font-size 8px, color var(--dim),
-            letter-spacing 3px, margin-bottom 8px
-          Textarea:
-            width: 100%, min-height: 80px
-            font: Share Tech Mono, 11px
-            color: var(--text), background: var(--bg-panel)
-            border: 1px solid var(--border-md)
-            padding: 10px 12px, resize: none
-            focus: border-color var(--accent)
-          Button row right-aligned:
-            [ SEND REPLY ]  [ CANCEL ]
-            [ SEND REPLY ]: border/color var(--accent)
-            [ CANCEL ]: border/color var(--dimmer)
-            Disabled while sending
-          On send success:
-            Hide composer
-            Show "// REPLY SENT ✓" briefly in accent2
-            then fade out after 2 seconds
-          On send fail:
-            "// SEND FAILED" in #ff4444
-            [ RETRY ] button
-      - Add to the CONNECTIONS settings stub:
-          Label: "// PUSHBULLET"
-          Input: API key field (password masked)
-          Hint text: "get your key at pushbullet.com/account"
-            font-size 8px, color var(--dimmer)
-          [ SAVE ] writes to electron-store key: 'pushbullet.apiKey'
-          After save: show "CONFIGURED ✓" in var(--accent2)
-      - This unblocks // MESSAGES from the NO_API_KEY error state
+              CANVAS:
+                Container div:
+                  flex: 1, overflow: hidden
+                  position: relative
+                  background: var(--bg)
+                  cursor: grab (pan mode)
+                  cursor: grabbing (while dragging)
+
+                Zoom/pan via react-zoom-pan-pinch:
+                  npm install react-zoom-pan-pinch
+                  <TransformWrapper>
+                    <TransformComponent>
+                      <svg ...>
+                  Initial scale: fit graph to viewport
+                  Min scale: 0.2, Max scale: 2.0
+
+                SVG element:
+                  width: layoutResult.width
+                  height: layoutResult.height
+
+                RENDER EDGES (draw before nodes):
+                  For each layoutEdge:
+                    <path>
+                      d: smooth cubic bezier through
+                         edge.points
+                      stroke: #00d4ff18 (default)
+                      stroke: #00d4ff88 (if source or
+                        target node is hovered/selected)
+                      stroke-width: 1
+                      fill: none
+                    Arrow marker at end:
+                      <defs>
+                        <marker id="arrow" ...>
+                          <path d="M0,0 L6,3 L0,6 Z"
+                            fill="#00d4ff44" />
+                      marker-end="url(#arrow)"
+
+                RENDER NODES:
+                  For each layoutNode:
+                    <g transform="translate(x, y)"
+                       onClick={() => selectNode(node)}
+                       onMouseEnter/Leave for hover>
+
+                      <rect
+                        width={NODE_WIDTH}
+                        height={NODE_HEIGHT}
+                        fill="var(--bg-panel)"
+                        stroke={node.color}
+                        stroke-width={selected ? 2 : 1}
+                        opacity={
+                          searchQuery && !matches ? 0.15 : 1
+                        }
+                      />
+
+                      <text
+                        x={8} y={NODE_HEIGHT / 2}
+                        dominant-baseline="middle"
+                        fill={node.color}
+                        font-size={10}
+                        font-family="Share Tech Mono"
+                        text-anchor="start">
+                        {truncate(node.label, 18)}
+                      </text>
+
+                      Layer indicator dot right side:
+                      <circle
+                        cx={NODE_WIDTH - 10}
+                        cy={NODE_HEIGHT / 2}
+                        r={3}
+                        fill={node.color}
+                      />
+
+                    </g>
+
+      ── PART 4 — Node Detail Panel ──────────────────────────
+
+      - [ ] Slide-in detail panel when node is clicked
+            Renders to the right of the canvas
+            Width: 280px, slides in with CSS transition
+            border-left: 1px solid var(--border)
+            background: var(--bg-panel)
+
+            PANEL HEADER:
+              Node filename in accent2, Rajdhani 700
+              Layer badge: "API ROUTE" / "COMPONENT" etc.
+                same style as project status badges
+              [ × ] close button top right
+              border-bottom: 1px solid var(--border)
+              padding: 14px 16px
+
+            SECTIONS (each with // LABEL header):
+
+              // PATH
+              Relative file path from repo root
+              font-size 9px, color var(--dim)
+              word-break: break-all
+
+              // OVERVIEW (only if @fileoverview exists)
+              @fileoverview text
+              font-size 10px, color var(--text)
+              line-height 1.8
+              italic
+
+              // DEPENDS ON (only if @depends exists)
+              Each @depends tag as a badge:
+                padding: 2px 8px
+                border: 1px solid var(--border-md)
+                font-size 8px, color var(--dim)
+                letter-spacing 1px
+                display: flex-wrap row
+
+              // IMPORTS ([N] files)
+              List of files this node imports
+              (internal only, from edges where
+               source === this node)
+              Each as a clickable row:
+                font-size 9px, color var(--dim)
+                hover: color var(--accent), cursor pointer
+                clicking navigates to that node
+                (pan canvas to center it, select it)
+
+              // IMPORTED BY ([N] files)
+              List of files that import this node
+              (reverse edges where target === this node)
+              Same clickable row style
+
+              // EXTERNAL DEPS (only if externals exist)
+              List of external npm packages this
+              file imports
+              font-size 9px, color #b44dff
+              non-clickable
+
+            EMPTY STATE (no node selected):
+              "// CLICK A NODE TO INSPECT"
+              centered, color var(--dimmer)
+
+      ── PART 5 — Controls, Search, Polish ──────────────────
+
+      - [ ] Search functionality
+            - Input in toolbar filters graph
+            - As user types:
+                Nodes that match label/path:
+                  opacity: 1, stroke brightened
+                Nodes that don't match:
+                  opacity: 0.1
+                Edges connected to matching nodes:
+                  stroke: #00d4ff44
+                Edges not connected:
+                  stroke: #00d4ff08
+            - Clear search: restore all opacities
+            - Match logic: case-insensitive includes()
+              on node.label and node.path
+
+      - [ ] Zoom controls
+            - [ − ] decrements scale by 0.2
+            - [ + ] increments scale by 0.2
+            - [ ⊡ ] resets to fit-to-viewport:
+                calculate scale to fit entire graph
+                in available canvas container size
+                center the graph
+            - Keyboard shortcuts:
+                Cmd/Ctrl + scroll → zoom
+                Space + drag → pan (already via
+                react-zoom-pan-pinch)
+
+      - [ ] Layer filter toggles
+            Add to toolbar below legend:
+            [ PAGES ] [ API ] [ COMPONENTS ]
+            [ UTILS ] [ EXTERNAL ]
+            All active by default
+            Clicking a layer toggle:
+              Hides all nodes of that layer
+              (opacity: 0, pointer-events: none)
+              Hides edges where both nodes are hidden
+              Button style: active = colored border,
+                inactive = var(--border-md) border
+
+      - [ ] Performance guard
+            - If node count > 150:
+              Show warning before rendering:
+                "// LARGE PROJECT — [N] FILES DETECTED"
+                "Rendering may be slow on first load"
+                [ RENDER ANYWAY ]  [ CANCEL ]
+              After first render cache the SVG layout
+              so rescan is the only way to regenerate
+
+      - [ ] [ RESCAN ] behavior
+            - Calls archmapAPI.rescan(repoPath)
+            - Shows scanning state while running
+            - On complete: recomputes layout,
+              re-renders graph
+            - Clears selected node and search query
+            - Updates "scanned X ago" in toolbar meta
+
+      - [ ] Tab integration
+            - // ARCH MAP tab in ProjectPanel.tsx
+              already exists as placeholder
+            - Wire it to render <ProjectArchMap>
+              passing current project's repoPath
+            - Lazy load: only call archmapAPI.scan
+              when tab is first activated
+              not on project select
+            - Cache scan result per project in
+              React state so switching tabs doesn't
+              re-scan unnecessarily
+
+
+
 
 - [ ] Add delete button below reply button in email detail view
       - Locate the reply button in the email detail panel component in `src/App.tsx`
